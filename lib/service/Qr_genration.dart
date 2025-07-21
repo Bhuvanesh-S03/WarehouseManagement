@@ -434,10 +434,10 @@ Color: ${widget.product.colorCode}
       final qrUrl = await widget.appwriteService.uploadQRCode(file, fileName);
 
       // Update product with QR URL
-      await widget.appwriteService.updateProductQRUrl(_savedProductId!, qrUrl);
+      await widget.appwriteService.updateProductQRUrl(_savedProductId!, qrUrl as String);
 
       setState(() {
-        _qrUrl = qrUrl;
+        _qrUrl = qrUrl as String?;
       });
 
       // Clean up temporary file
