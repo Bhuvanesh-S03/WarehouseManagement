@@ -3,8 +3,8 @@ import 'package:flutter/material.dart';
 import 'package:warehouse_manager/model/product_model.dart';
 import 'package:warehouse_manager/screens/home_screen.dart';
 import 'package:warehouse_manager/screens/setting.dart';
-
 import 'package:warehouse_manager/service/loading.dart';
+import 'package:warehouse_manager/service/appwrite.dart';
 
 void main() {
   runApp(const MyApp());
@@ -34,33 +34,139 @@ class MainAppPage extends StatefulWidget {
 class _MainAppPageState extends State<MainAppPage> {
   int _selectedIndex = 0;
   final Map<String, Product> _productMap = {};
+  final AppwriteService _appwriteService = AppwriteService();
+  bool _isLoading = true;
+  Map<String, int> _warehouseSettings = {
+    'columns': 3,
+    'racks_per_column': 3,
+    'shelves_per_rack': 4,
+    'positions_per_shelf': 4,
+  };
 
   @override
   void initState() {
     super.initState();
-    // Initialize Appwrite service
-
-    _loadInitialProducts();
+    _initializeApp();
   }
 
-  Future<void> _loadInitialProducts() async {
+  Future<void> _initializeApp() async {
     try {
-      // Example: Load products from Appwrite
-      // final products = await _appwriteService.getProducts();
-      // setState(() => _productMap.addAll(products));
+      setState(() => _isLoading = true);
+
+      // Initialize database
+      await _appwriteService.initializeDatabase();
+      
+      // Load warehouse settings
+      final settings = await _appwriteService.getWarehouseSettings();
+      if (settings != null) {
+        setState(() => _warehouseSettings = settings);
+      }
+
+      // Load products from database
+      await _loadProductsFromDatabase();
+
+      setState(() => _isLoading = false);
     } catch (e) {
-      debugPrint('Initial load error: $e');
+      setState(() => _isLoading = false);
+      _showErrorDialog('Initialization Error', 'Failed to initialize app: $e');
     }
   }
 
-  void _updateProduct(String key, Product product) {
+  Future<void> _loadProductsFromDatabase() async {
+    try {
+      final products = await _appwriteService.getAllProducts();
+      final Map<String, Product> productMap = {};
+
+      for (final product in products) {
+        for (final location in product.locations) {
+          productMap[location] = product;
+        }
+      }
+
+      setState(() {
+        _productMap.clear();
+        _productMap.addAll(productMap);
+      });
+    } catch (e) {
+      debugPrint('Error loading products: $e');
+    }
+  }
+
+  Future<void> _saveProductToDatabase(Product product) async {
+    try {
+      await _appwriteService.saveProduct(product);
+      // Refresh local data
+      await _loadProductsFromDatabase();
+    } catch (e) {
+      _showErrorDialog('Save Error', 'Failed to save product: $e');
+    }
+  }
+
+  void _updateProduct(String key, Product product) async {
     setState(() {
       _productMap[key] = product;
     });
+
+    // Save to database
+    await _saveProductToDatabase(product);
+  }
+
+  void _showErrorDialog(String title, String message) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text(title),
+        content: Text(message),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('OK'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _updateWarehouseSettings(Map<String, int> settings) async {
+    try {
+      await _appwriteService.saveWarehouseSettings(
+        columns: settings['columns']!,
+        racksPerColumn: settings['racks_per_column']!,
+        shelvesPerRack: settings['shelves_per_rack']!,
+        positionsPerShelf: settings['positions_per_shelf']!,
+      );
+      
+      setState(() => _warehouseSettings = settings);
+      
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Settings saved successfully!')),
+      );
+    } catch (e) {
+      _showErrorDialog('Settings Error', 'Failed to save settings: $e');
+    }
+  }
+
+  Future<void> _refreshData() async {
+    await _loadProductsFromDatabase();
   }
 
   @override
   Widget build(BuildContext context) {
+    if (_isLoading) {
+      return const Scaffold(
+        body: Center(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              CircularProgressIndicator(),
+              SizedBox(height: 16),
+              Text('Initializing Warehouse Manager...'),
+            ],
+          ),
+        ),
+      );
+    }
+
     return Scaffold(
       body: _buildCurrentScreen(),
       bottomNavigationBar: BottomNavigationBar(
@@ -82,6 +188,13 @@ class _MainAppPageState extends State<MainAppPage> {
           ),
         ],
       ),
+      floatingActionButton: _selectedIndex == 0
+          ? FloatingActionButton(
+              onPressed: _refreshData,
+              child: const Icon(Icons.refresh),
+              tooltip: 'Refresh Data',
+            )
+          : null,
     );
   }
 
@@ -91,27 +204,43 @@ class _MainAppPageState extends State<MainAppPage> {
         return HomePage(
           productMap: _productMap,
           onProductUpdated: _updateProduct,
+          appwriteService: _appwriteService,
         );
       case 1:
         return LoadingPage(
           productMap: _productMap,
           onProductUpdated: _updateProduct,
+          warehouseSettings: _warehouseSettings,
+          appwriteService: _appwriteService,
         );
       case 2:
         return const Center(
-          child: Text("Unload (Coming Soon)", style: TextStyle(fontSize: 18)),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(Icons.construction, size: 64, color: Colors.grey),
+              SizedBox(height: 16),
+              Text(
+                "Unload Feature",
+                style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
+              ),
+              Text(
+                "Coming Soon!",
+                style: TextStyle(fontSize: 18, color: Colors.grey),
+              ),
+            ],
+          ),
         );
       case 3:
         return SettingsPage(
-          initialRows: 3,
-          initialColumns: 2,
-          initialShelves: 4,
-          onSettingsUpdated: (_) {},
+          initialSettings: _warehouseSettings,
+          onSettingsUpdated: _updateWarehouseSettings,
         );
       default:
         return HomePage(
           productMap: _productMap,
           onProductUpdated: _updateProduct,
+          appwriteService: _appwriteService,
         );
     }
   }

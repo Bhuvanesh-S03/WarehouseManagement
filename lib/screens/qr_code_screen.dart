@@ -1,113 +1,116 @@
-import 'dart:io';
+import 'dart:convert';
 import 'dart:typed_data';
-import 'dart:ui';
 import 'package:flutter/material.dart';
-import 'package:flutter/rendering.dart';
-import 'package:path_provider/path_provider.dart';
 import 'package:qr_flutter/qr_flutter.dart';
-import 'package:uuid/uuid.dart';
-import 'package:warehouse_manager/service/appwrite.dart' show AppwriteService;
-
+import 'package:appwrite/appwrite.dart';
 import '../model/product_model.dart';
 
 class GenerateQRScreen extends StatefulWidget {
   final Product product;
-  
-
-  const GenerateQRScreen({super.key, required this.product});
+  const GenerateQRScreen({Key? key, required this.product}) : super(key: key);
 
   @override
   State<GenerateQRScreen> createState() => _GenerateQRScreenState();
 }
 
 class _GenerateQRScreenState extends State<GenerateQRScreen> {
-  final GlobalKey globalKey = GlobalKey();
-  bool isUploading = false;
-  final AppwriteService _appwriteService = AppwriteService();
+  bool _isSaving = false;
+  String? _error;
+  String? _successMessage;
 
+  final Client _client = Client()
+      .setEndpoint('https://nyc.cloud.appwrite.io/v1')
+      .setProject('687bc7e3001a688c12aa');
 
-  
-  Future<Uint8List?> _captureQR() async {
-    try {
-      RenderRepaintBoundary boundary =
-          globalKey.currentContext!.findRenderObject() as RenderRepaintBoundary;
-      var image = await boundary.toImage(pixelRatio: 3.0);
-      ByteData? byteData = await image.toByteData(format: ImageByteFormat.png);
-      return byteData?.buffer.asUint8List();
-    } catch (e) {
-      print("QR Capture Error: $e");
-      return null;
-    }
+  late final Storage _storage;
+
+  @override
+  void initState() {
+    super.initState();
+    _storage = Storage(_client);
   }
 
-  Future<void> _saveToAppwrite() async {
-    setState(() => isUploading = true);
-
-    final qrImage = await _captureQR();
-    if (qrImage == null) return;
-
-    final tempDir = await getTemporaryDirectory();
-    final fileName = '${widget.product.id}.png';
-    final file = await File('${tempDir.path}/$fileName').writeAsBytes(qrImage);
+  Future<void> _saveQRToAppwrite() async {
+    setState(() {
+      _isSaving = true;
+      _error = null;
+      _successMessage = null;
+    });
 
     try {
-      final publicUrl = await _appwriteService.uploadQR(file, fileName);
+      // 1. Generate QR Code
+      final qrImage = await QrPainter(
+        data: jsonEncode(widget.product.toJson()),
+        version: QrVersions.auto,
+        errorCorrectionLevel: QrErrorCorrectLevel.H,
+      ).toImageData(300);
 
-      final data = {
-        'id': widget.product.id,
-        'name': widget.product.name,
-        'weight': widget.product.weight,
-        'entry_date': widget.product.entryDate.toIso8601String(),
-        'expiry_date': widget.product.expiryDate.toIso8601String(),
-        'locations': widget.product.locations,
-        'color_code': widget.product.colorCode,
-        'qr_url': publicUrl,
-      };
+      if (qrImage == null) throw Exception('Failed to generate QR image');
 
-      await _appwriteService.saveProduct(data, widget.product.id);
-
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Saved successfully to Appwrite')),
+      // 2. Store in Appwrite
+      await _storage.createFile(
+        bucketId: '687c472b0021c89655b8',
+        fileId: ID.unique(),
+        file: InputFile.fromBytes(
+          bytes: qrImage.buffer.asUint8List(),
+          filename: 'product_${widget.product.id}.png',
+        ),
       );
-      Navigator.pop(context);
+
+      setState(() => _successMessage = 'QR stored successfully');
     } catch (e) {
-      print("Save to Appwrite Error: $e");
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('Error: $e')));
+      setState(() => _error = e.toString());
     } finally {
-      setState(() => isUploading = false);
+      setState(() => _isSaving = false);
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    final qrData =
-        'ID: ${widget.product.id}\nName: ${widget.product.name}\nExpiry: ${widget.product.expiryDate}\nLocation: ${widget.product.locations.join(',')}';
-
     return Scaffold(
-      appBar: AppBar(title: const Text('Generate QR')),
-      body: Padding(
-        padding: const EdgeInsets.all(16.0),
-        child: Column(
-          children: [
-            RepaintBoundary(
-              key: globalKey,
-              child: QrImageView(
-                data: qrData,
-                version: QrVersions.auto,
-                size: 250.0,
+      appBar: AppBar(title: const Text('Store QR Code')),
+      body: Center(
+        child: Padding(
+          padding: const EdgeInsets.all(20),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              // QR Code Display
+              QrImageView(
+                data: jsonEncode(widget.product.toJson()),
+                size: 200,
+                backgroundColor: Colors.white,
               ),
-            ),
-            const SizedBox(height: 20),
-            ElevatedButton(
-              onPressed: isUploading ? null : _saveToAppwrite,
-              child:
-                  isUploading
-                      ? const CircularProgressIndicator()
-                      : const Text("Save QR to Appwrite"),
-            ),
-          ],
+              const SizedBox(height: 30),
+
+              // Save Button
+              ElevatedButton(
+                onPressed: _isSaving ? null : _saveQRToAppwrite,
+                style: ElevatedButton.styleFrom(
+                  minimumSize: const Size(200, 50),
+                ),
+                child:
+                    _isSaving
+                        ? const CircularProgressIndicator()
+                        : const Text('Store in Cloud'),
+              ),
+              const SizedBox(height: 20),
+
+              // Status Messages
+              if (_error != null)
+                Text(
+                  'Error: $_error',
+                  style: const TextStyle(color: Colors.red),
+                  textAlign: TextAlign.center,
+                ),
+
+              if (_successMessage != null)
+                Text(
+                  _successMessage!,
+                  style: const TextStyle(color: Colors.green),
+                ),
+            ],
+          ),
         ),
       ),
     );

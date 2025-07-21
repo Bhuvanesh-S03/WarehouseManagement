@@ -150,7 +150,9 @@ Future<Product?> showProductDialog(
 
                 Navigator.of(context).pop(product);
               }
+              
             },
+            
           ),
         ],
       );
