@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:warehouse_manager/model/product_model.dart';
 import 'package:warehouse_manager/screens/qr_code_screen.dart';
+import 'package:warehouse_manager/service/appwrite.dart';
 import 'package:warehouse_manager/widget/show_dialog.dart'
     show showProductDialog;
 
@@ -12,7 +13,7 @@ class LoadingPage extends StatefulWidget {
   const LoadingPage({
     Key? key,
     required this.productMap,
-    required this.onProductUpdated,
+    required this.onProductUpdated, required Map<String, int> warehouseSettings, required AppwriteService appwriteService,
   }) : super(key: key);
 
   @override

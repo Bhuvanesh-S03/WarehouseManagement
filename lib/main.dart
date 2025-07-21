@@ -232,10 +232,10 @@ class _MainAppPageState extends State<MainAppPage> {
           ),
         );
       case 3:
-        return SettingsPage(
-          initialSettings: _warehouseSettings,
-          onSettingsUpdated: _updateWarehouseSettings,
-        );
+        // return SettingsPage(
+        //   initialSettings: _warehouseSettings,
+        //   onSettingsUpdated: _updateWarehouseSettings,
+        // );
       default:
         return HomePage(
           productMap: _productMap,

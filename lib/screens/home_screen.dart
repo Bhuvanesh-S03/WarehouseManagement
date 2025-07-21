@@ -1,11 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:warehouse_manager/model/product_model.dart';
+import 'package:warehouse_manager/service/appwrite.dart';
 
 class HomePage extends StatefulWidget {
   final Map<String, Product> productMap;
   final Function(String, Product)? onProductUpdated;
 
-  const HomePage({Key? key, required this.productMap, this.onProductUpdated})
+  const HomePage({Key? key, required this.productMap, this.onProductUpdated, required AppwriteService appwriteService})
     : super(key: key);
 
   @override

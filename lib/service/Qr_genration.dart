@@ -1,6 +1,6 @@
 import 'dart:io';
 import 'dart:typed_data';
-import 'dart:ui';
+import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:path_provider/path_provider.dart';
@@ -28,6 +28,8 @@ class _GenerateQRScreenState extends State<GenerateQRScreen> {
   final GlobalKey _qrKey = GlobalKey();
   bool _isUploading = false;
   String? _qrUrl;
+  bool _isSaving = false;
+  String? _savedProductId;
 
   @override
   Widget build(BuildContext context) {
@@ -110,7 +112,12 @@ class _GenerateQRScreenState extends State<GenerateQRScreen> {
     );
   }
 
-  Widget _buildInfoRow(IconData icon, String label, String value, {Color? color}) {
+  Widget _buildInfoRow(
+    IconData icon,
+    String label,
+    String value, {
+    Color? color,
+  }) {
     return Row(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -144,7 +151,8 @@ class _GenerateQRScreenState extends State<GenerateQRScreen> {
   }
 
   Color _getExpiryColor() {
-    final daysUntilExpiry = widget.product.expiryDate.difference(DateTime.now()).inDays;
+    final daysUntilExpiry =
+        widget.product.expiryDate.difference(DateTime.now()).inDays;
     if (daysUntilExpiry <= 7) return Colors.red;
     if (daysUntilExpiry <= 30) return Colors.orange;
     return Colors.green;
@@ -205,4 +213,289 @@ class _GenerateQRScreenState extends State<GenerateQRScreen> {
                     ),
                     Text(
                       'ID: ${widget.product.id}',
-                      style: Text
+                      style: const TextStyle(fontSize: 12, color: Colors.grey),
+                      textAlign: TextAlign.center,
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildActionButtons() {
+    return Column(
+      children: [
+        // Save Product Button
+        SizedBox(
+          width: double.infinity,
+          child: ElevatedButton.icon(
+            onPressed: _isSaving ? null : _saveProduct,
+            icon:
+                _isSaving
+                    ? const SizedBox(
+                      width: 16,
+                      height: 16,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                    : const Icon(Icons.save),
+            label: Text(_isSaving ? 'Saving Product...' : 'Save Product'),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.green,
+              foregroundColor: Colors.white,
+              padding: const EdgeInsets.symmetric(vertical: 16),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(8),
+              ),
+            ),
+          ),
+        ),
+        const SizedBox(height: 12),
+        // Download QR Button
+        SizedBox(
+          width: double.infinity,
+          child: ElevatedButton.icon(
+            onPressed: _isUploading ? null : _downloadQR,
+            icon:
+                _isUploading
+                    ? const SizedBox(
+                      width: 16,
+                      height: 16,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                    : const Icon(Icons.download),
+            label: Text(_isUploading ? 'Processing...' : 'Download QR Code'),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.blue,
+              foregroundColor: Colors.white,
+              padding: const EdgeInsets.symmetric(vertical: 16),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(8),
+              ),
+            ),
+          ),
+        ),
+        const SizedBox(height: 12),
+        // Upload QR Button
+        SizedBox(
+          width: double.infinity,
+          child: ElevatedButton.icon(
+            onPressed:
+                (_isUploading || _savedProductId == null) ? null : _uploadQR,
+            icon: const Icon(Icons.cloud_upload),
+            label: const Text('Upload to Cloud'),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.orange,
+              foregroundColor: Colors.white,
+              padding: const EdgeInsets.symmetric(vertical: 16),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(8),
+              ),
+            ),
+          ),
+        ),
+        if (_qrUrl != null) ...[
+          const SizedBox(height: 16),
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: Colors.green.shade50,
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(color: Colors.green.shade200),
+            ),
+            child: Row(
+              children: [
+                Icon(Icons.check_circle, color: Colors.green),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    'QR code uploaded successfully!',
+                    style: TextStyle(color: Colors.green.shade800),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ],
+    );
+  }
+
+  String _generateQRData() {
+    // Generate comprehensive QR data with all product information
+    return '''
+Product ID: ${widget.product.id}
+Name: ${widget.product.name}
+Weight: ${widget.product.weight} kg
+Entry: ${DateFormat('yyyy-MM-dd').format(widget.product.entryDate)}
+Expiry: ${DateFormat('yyyy-MM-dd').format(widget.product.expiryDate)}
+Locations: ${widget.product.locations.join(', ')}
+Color: ${widget.product.colorCode}
+'''.trim();
+  }
+
+  Future<void> _saveProduct() async {
+    setState(() {
+      _isSaving = true;
+    });
+
+    try {
+      // Save product to database
+      final productId = await widget.appwriteService.saveProduct(
+        widget.product,
+      );
+
+      setState(() {
+        _savedProductId = productId;
+      });
+
+      // Update the product ID for future operations
+      widget.product.id = productId;
+
+      _showSuccessDialog('Product saved successfully!');
+    } catch (e) {
+      _showErrorDialog('Failed to save product: ${e.toString()}');
+    } finally {
+      setState(() {
+        _isSaving = false;
+      });
+    }
+  }
+
+  Future<void> _downloadQR() async {
+    setState(() {
+      _isUploading = true;
+    });
+
+    try {
+      // Capture the QR code as image
+      final boundary =
+          _qrKey.currentContext?.findRenderObject() as RenderRepaintBoundary?;
+      if (boundary == null) {
+        throw Exception('Could not find QR code to capture');
+      }
+
+      final image = await boundary.toImage(pixelRatio: 3.0);
+      final byteData = await image.toByteData(format: ui.ImageByteFormat.png);
+      final pngBytes = byteData!.buffer.asUint8List();
+
+      // Get the downloads directory
+      final directory = await getApplicationDocumentsDirectory();
+      final fileName =
+          'QR_${widget.product.name.replaceAll(' ', '_')}_${DateTime.now().millisecondsSinceEpoch}.png';
+      final file = File('${directory.path}/$fileName');
+
+      // Save the file
+      await file.writeAsBytes(pngBytes);
+
+      _showSuccessDialog('QR code saved to: ${file.path}');
+    } catch (e) {
+      _showErrorDialog('Failed to save QR code: ${e.toString()}');
+    } finally {
+      setState(() {
+        _isUploading = false;
+      });
+    }
+  }
+
+  Future<void> _uploadQR() async {
+    if (_savedProductId == null) {
+      _showErrorDialog('Please save the product first');
+      return;
+    }
+
+    setState(() {
+      _isUploading = true;
+    });
+
+    try {
+      // Capture the QR code as image
+      final boundary =
+          _qrKey.currentContext?.findRenderObject() as RenderRepaintBoundary?;
+      if (boundary == null) {
+        throw Exception('Could not find QR code to capture');
+      }
+
+      final image = await boundary.toImage(pixelRatio: 3.0);
+      final byteData = await image.toByteData(format: ui.ImageByteFormat.png);
+      final pngBytes = byteData!.buffer.asUint8List();
+
+      // Create temporary file
+      final tempDir = await getTemporaryDirectory();
+      final fileName =
+          'QR_${widget.product.id}_${DateTime.now().millisecondsSinceEpoch}.png';
+      final file = File('${tempDir.path}/$fileName');
+      await file.writeAsBytes(pngBytes);
+
+      // Upload to Appwrite storage
+      final qrUrl = await widget.appwriteService.uploadQRCode(file, fileName);
+
+      // Update product with QR URL
+      await widget.appwriteService.updateProductQRUrl(_savedProductId!, qrUrl);
+
+      setState(() {
+        _qrUrl = qrUrl;
+      });
+
+      // Clean up temporary file
+      await file.delete();
+
+      _showSuccessDialog('QR code uploaded to cloud successfully!');
+    } catch (e) {
+      _showErrorDialog('Failed to upload QR code: ${e.toString()}');
+    } finally {
+      setState(() {
+        _isUploading = false;
+      });
+    }
+  }
+
+  void _showSuccessDialog(String message) {
+    showDialog(
+      context: context,
+      builder:
+          (context) => AlertDialog(
+            title: const Row(
+              children: [
+                Icon(Icons.check_circle, color: Colors.green),
+                SizedBox(width: 8),
+                Text('Success'),
+              ],
+            ),
+            content: Text(message),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(context).pop(),
+                child: const Text('OK'),
+              ),
+            ],
+          ),
+    );
+  }
+
+  void _showErrorDialog(String message) {
+    showDialog(
+      context: context,
+      builder:
+          (context) => AlertDialog(
+            title: const Row(
+              children: [
+                Icon(Icons.error, color: Colors.red),
+                SizedBox(width: 8),
+                Text('Error'),
+              ],
+            ),
+            content: Text(message),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(context).pop(),
+                child: const Text('OK'),
+              ),
+            ],
+          ),
+    );
+  }
+}
