@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:typed_data';
 import 'package:appwrite/appwrite.dart';
 import 'package:appwrite/models.dart' as models;
 import '../model/product_model.dart';
@@ -32,10 +33,7 @@ class AppwriteService {
         await db.get(databaseId: databaseId);
       } on AppwriteException catch (e) {
         if (e.code == 404) {
-          await db.create(
-            databaseId: databaseId,
-            name: 'Warehouse Database',
-          );
+          await db.create(databaseId: databaseId, name: 'Warehouse Database');
         }
       }
 
@@ -111,6 +109,7 @@ class AppwriteService {
       {'key': 'locations', 'type': 'array', 'required': true},
       {'key': 'color_code', 'type': 'integer', 'required': true},
       {'key': 'qr_url', 'type': 'string', 'size': 500, 'required': false},
+      {'key': 'qr_file_id', 'type': 'string', 'size': 255, 'required': false},
     ];
 
     for (final attr in attributes) {
@@ -160,11 +159,13 @@ class AppwriteService {
             );
             break;
         }
-        
+
         // Add a small delay to avoid rate limiting
         await Future.delayed(Duration(milliseconds: 500));
       } on AppwriteException catch (e) {
-        print('Warning: Could not create attribute ${attr['key']}: ${e.message}');
+        print(
+          'Warning: Could not create attribute ${attr['key']}: ${e.message}',
+        );
       }
     }
   }
@@ -186,17 +187,32 @@ class AppwriteService {
           key: attr['key'] as String,
           required: attr['required'] as bool,
         );
-        
+
         await Future.delayed(Duration(milliseconds: 500));
       } on AppwriteException catch (e) {
-        print('Warning: Could not create setting attribute ${attr['key']}: ${e.message}');
+        print(
+          'Warning: Could not create setting attribute ${attr['key']}: ${e.message}',
+        );
       }
     }
   }
 
-  /// Save product details to Appwrite database
-  Future<String> saveProduct(Product product) async {
+  /// Save product details to Appwrite database with QR code
+  Future<String> saveProductWithQR(Product product, File? qrFile) async {
     try {
+      String? qrUrl;
+      String? qrFileId;
+
+      // Upload QR code first if provided
+      if (qrFile != null) {
+        final qrUploadResult = await uploadQRCode(
+          qrFile,
+          'QR_${product.name}_${DateTime.now().millisecondsSinceEpoch}.png',
+        );
+        qrUrl = qrUploadResult['url'];
+        qrFileId = qrUploadResult['fileId'];
+      }
+
       final data = {
         'name': product.name,
         'weight': product.weight,
@@ -204,7 +220,8 @@ class AppwriteService {
         'expiry_date': product.expiryDate.toIso8601String(),
         'locations': product.locations,
         'color_code': product.colorCode,
-        'qr_url': '', // Will be updated when QR is uploaded
+        'qr_url': qrUrl ?? '',
+        'qr_file_id': qrFileId ?? '',
       };
 
       final result = await db.createDocument(
@@ -222,19 +239,69 @@ class AppwriteService {
     }
   }
 
-  /// Update product with QR URL
-  Future<void> updateProductQRUrl(String documentId, String qrUrl) async {
+  /// Save product details to Appwrite database (original method for backward compatibility)
+  Future<String> saveProduct(Product product) async {
+    return saveProductWithQR(product, null);
+  }
+
+  /// Update product with QR URL and file ID
+  Future<void> updateProductQRUrl(
+    String documentId,
+    String qrUrl, {
+    String? qrFileId,
+  }) async {
     try {
+      final updateData = {'qr_url': qrUrl};
+      if (qrFileId != null) {
+        updateData['qr_file_id'] = qrFileId;
+      }
+
       await db.updateDocument(
         databaseId: databaseId,
         collectionId: productsCollectionId,
         documentId: documentId,
-        data: {'qr_url': qrUrl},
+        data: updateData,
       );
       print('✅ Product QR URL updated');
     } on AppwriteException catch (e) {
       print('❌ Error updating product QR URL: ${e.message}');
       rethrow;
+    }
+  }
+
+  /// Get all products from database and return as a map with location keys
+  Future<Map<String, Product>> getAllProductsAsMap() async {
+    try {
+      final response = await db.listDocuments(
+        databaseId: databaseId,
+        collectionId: productsCollectionId,
+      );
+
+      Map<String, Product> productMap = {};
+
+      for (final doc in response.documents) {
+        final product = Product(
+          id: doc.$id,
+          name: doc.data['name'],
+          weight: (doc.data['weight'] as num).toDouble(),
+          entryDate: DateTime.parse(doc.data['entry_date']),
+          expiryDate: DateTime.parse(doc.data['expiry_date']),
+          locations: List<String>.from(doc.data['locations']),
+          colorCode: doc.data['color_code'],
+          qrUrl: doc.data['qr_url'],
+        );
+
+        // Map product to all its locations
+        for (final location in product.locations) {
+          productMap[location] = product;
+        }
+      }
+
+      print('✅ Loaded ${productMap.length} product locations');
+      return productMap;
+    } on AppwriteException catch (e) {
+      print('❌ Error fetching products: ${e.message}');
+      return {};
     }
   }
 
@@ -255,6 +322,7 @@ class AppwriteService {
           expiryDate: DateTime.parse(doc.data['expiry_date']),
           locations: List<String>.from(doc.data['locations']),
           colorCode: doc.data['color_code'],
+          qrUrl: doc.data['qr_url'],
         );
       }).toList();
     } on AppwriteException catch (e) {
@@ -269,9 +337,7 @@ class AppwriteService {
       final response = await db.listDocuments(
         databaseId: databaseId,
         collectionId: productsCollectionId,
-        queries: [
-          Query.search('locations', location),
-        ],
+        queries: [Query.search('locations', location)],
       );
 
       return response.documents.map((doc) {
@@ -283,6 +349,7 @@ class AppwriteService {
           expiryDate: DateTime.parse(doc.data['expiry_date']),
           locations: List<String>.from(doc.data['locations']),
           colorCode: doc.data['color_code'],
+          qrUrl: doc.data['qr_url'],
         );
       }).toList();
     } on AppwriteException catch (e) {
@@ -295,13 +362,11 @@ class AppwriteService {
   Future<List<Product>> getExpiringProducts(int daysFromNow) async {
     try {
       final cutoffDate = DateTime.now().add(Duration(days: daysFromNow));
-      
+
       final response = await db.listDocuments(
         databaseId: databaseId,
         collectionId: productsCollectionId,
-        queries: [
-          Query.lessThan('expiry_date', cutoffDate.toIso8601String()),
-        ],
+        queries: [Query.lessThan('expiry_date', cutoffDate.toIso8601String())],
       );
 
       return response.documents.map((doc) {
@@ -313,6 +378,7 @@ class AppwriteService {
           expiryDate: DateTime.parse(doc.data['expiry_date']),
           locations: List<String>.from(doc.data['locations']),
           colorCode: doc.data['color_code'],
+          qrUrl: doc.data['qr_url'],
         );
       }).toList();
     } on AppwriteException catch (e) {
@@ -321,9 +387,28 @@ class AppwriteService {
     }
   }
 
-  /// Delete a product
+  /// Delete a product and its QR code
   Future<void> deleteProduct(String documentId) async {
     try {
+      // First get the product to find QR file ID
+      final product = await db.getDocument(
+        databaseId: databaseId,
+        collectionId: productsCollectionId,
+        documentId: documentId,
+      );
+
+      // Delete QR file if it exists
+      final qrFileId = product.data['qr_file_id'];
+      if (qrFileId != null && qrFileId.isNotEmpty) {
+        try {
+          await storage.deleteFile(bucketId: qrBucketId, fileId: qrFileId);
+          print('✅ QR file deleted');
+        } catch (e) {
+          print('⚠️ Could not delete QR file: $e');
+        }
+      }
+
+      // Delete the product document
       await db.deleteDocument(
         databaseId: databaseId,
         collectionId: productsCollectionId,
@@ -336,8 +421,8 @@ class AppwriteService {
     }
   }
 
-  /// Upload QR code image and return its URL
-  Future<String> uploadQRCode(File file, String fileName) async {
+  /// Upload QR code image and return its URL and file ID
+  Future<Map<String, String>> uploadQRCode(File file, String fileName) async {
     try {
       final result = await storage.createFile(
         bucketId: qrBucketId,
@@ -346,13 +431,29 @@ class AppwriteService {
       );
 
       // Return a viewable URL
-      final fileUrl = 'https://cloud.appwrite.io/v1/storage/buckets/$qrBucketId/files/${result.$id}/view?project=687bc7e3001a688c12aa';
-      
+      final fileUrl =
+          'https://cloud.appwrite.io/v1/storage/buckets/$qrBucketId/files/${result.$id}/view?project=687bc7e3001a688c12aa';
+
       print('✅ QR code uploaded: $fileUrl');
-      return fileUrl;
+      return {'url': fileUrl, 'fileId': result.$id};
     } on AppwriteException catch (e) {
       print('❌ Error uploading QR code: ${e.message}');
       rethrow;
+    }
+  }
+
+  /// Download QR code file
+  Future<Uint8List?> downloadQRCode(String fileId) async {
+    try {
+      final result = await storage.getFileDownload(
+        bucketId: qrBucketId,
+        fileId: fileId,
+      );
+      print('✅ QR code downloaded');
+      return result;
+    } on AppwriteException catch (e) {
+      print('❌ Error downloading QR code: ${e.message}');
+      return null;
     }
   }
 
@@ -427,9 +528,7 @@ class AppwriteService {
       final response = await db.listDocuments(
         databaseId: databaseId,
         collectionId: productsCollectionId,
-        queries: [
-          Query.search('name', query),
-        ],
+        queries: [Query.search('name', query)],
       );
 
       return response.documents.map((doc) {
@@ -441,6 +540,7 @@ class AppwriteService {
           expiryDate: DateTime.parse(doc.data['expiry_date']),
           locations: List<String>.from(doc.data['locations']),
           colorCode: doc.data['color_code'],
+          qrUrl: doc.data['qr_url'],
         );
       }).toList();
     } on AppwriteException catch (e) {
