@@ -106,7 +106,12 @@ class AppwriteService {
       {'key': 'weight', 'type': 'double', 'required': true},
       {'key': 'entry_date', 'type': 'datetime', 'required': true},
       {'key': 'expiry_date', 'type': 'datetime', 'required': true},
-      {'key': 'locations', 'type': 'array', 'required': true},
+      {
+        'key': 'locations',
+        'type': 'array',
+        'size': 100,
+        'required': true,
+      }, // Fixed array with size
       {'key': 'color_code', 'type': 'integer', 'required': true},
       {'key': 'qr_url', 'type': 'string', 'size': 500, 'required': false},
       {'key': 'qr_file_id', 'type': 'string', 'size': 255, 'required': false},
@@ -114,6 +119,8 @@ class AppwriteService {
 
     for (final attr in attributes) {
       try {
+        await Future.delayed(Duration(milliseconds: 1000)); // Increased delay
+
         switch (attr['type']) {
           case 'string':
             await db.createStringAttribute(
@@ -149,23 +156,24 @@ class AppwriteService {
             );
             break;
           case 'array':
+            // For array attributes, create as string array
             await db.createStringAttribute(
               databaseId: databaseId,
               collectionId: productsCollectionId,
               key: attr['key'] as String,
-              size: 1000,
+              size: attr['size'] as int,
               required: attr['required'] as bool,
-              isArray: true,
+              xarray: true, // Use xarray instead of isArray
             );
             break;
         }
 
-        // Add a small delay to avoid rate limiting
-        await Future.delayed(Duration(milliseconds: 500));
+        print('✅ Created attribute: ${attr['key']}');
       } on AppwriteException catch (e) {
         print(
           'Warning: Could not create attribute ${attr['key']}: ${e.message}',
         );
+        // Don't rethrow, continue with other attributes
       }
     }
   }
@@ -188,7 +196,8 @@ class AppwriteService {
           required: attr['required'] as bool,
         );
 
-        await Future.delayed(Duration(milliseconds: 500));
+        await Future.delayed(Duration(milliseconds: 1000));
+        print('✅ Created setting attribute: ${attr['key']}');
       } on AppwriteException catch (e) {
         print(
           'Warning: Could not create setting attribute ${attr['key']}: ${e.message}',
@@ -218,7 +227,7 @@ class AppwriteService {
         'weight': product.weight,
         'entry_date': product.entryDate.toIso8601String(),
         'expiry_date': product.expiryDate.toIso8601String(),
-        'locations': product.locations,
+        'locations': product.locations, // This should work now
         'color_code': product.colorCode,
         'qr_url': qrUrl ?? '',
         'qr_file_id': qrFileId ?? '',
@@ -280,20 +289,31 @@ class AppwriteService {
       Map<String, Product> productMap = {};
 
       for (final doc in response.documents) {
-        final product = Product(
-          id: doc.$id,
-          name: doc.data['name'],
-          weight: (doc.data['weight'] as num).toDouble(),
-          entryDate: DateTime.parse(doc.data['entry_date']),
-          expiryDate: DateTime.parse(doc.data['expiry_date']),
-          locations: List<String>.from(doc.data['locations']),
-          colorCode: doc.data['color_code'],
-          qrUrl: doc.data['qr_url'],
-        );
+        try {
+          final product = Product(
+            id: doc.$id,
+            name: doc.data['name'] ?? '',
+            weight: (doc.data['weight'] as num?)?.toDouble() ?? 0.0,
+            entryDate:
+                doc.data['entry_date'] != null
+                    ? DateTime.parse(doc.data['entry_date'])
+                    : DateTime.now(),
+            expiryDate:
+                doc.data['expiry_date'] != null
+                    ? DateTime.parse(doc.data['expiry_date'])
+                    : DateTime.now(),
+            locations: _parseLocations(doc.data['locations']),
+            colorCode: doc.data['color_code'] ?? 0,
+            qrUrl: doc.data['qr_url'] ?? '',
+          );
 
-        // Map product to all its locations
-        for (final location in product.locations) {
-          productMap[location] = product;
+          // Map product to all its locations
+          for (final location in product.locations) {
+            productMap[location] = product;
+          }
+        } catch (e) {
+          print('Error parsing product ${doc.$id}: $e');
+          continue;
         }
       }
 
@@ -305,6 +325,22 @@ class AppwriteService {
     }
   }
 
+  /// Helper method to parse locations from database
+  List<String> _parseLocations(dynamic locations) {
+    if (locations == null) return [];
+
+    if (locations is List) {
+      return locations.map((e) => e.toString()).toList();
+    }
+
+    if (locations is String) {
+      // Handle comma-separated string
+      return locations.split(',').map((e) => e.trim()).toList();
+    }
+
+    return [locations.toString()];
+  }
+
   /// Get all products from database
   Future<List<Product>> getAllProducts() async {
     try {
@@ -314,16 +350,36 @@ class AppwriteService {
       );
 
       return response.documents.map((doc) {
-        return Product(
-          id: doc.$id,
-          name: doc.data['name'],
-          weight: (doc.data['weight'] as num).toDouble(),
-          entryDate: DateTime.parse(doc.data['entry_date']),
-          expiryDate: DateTime.parse(doc.data['expiry_date']),
-          locations: List<String>.from(doc.data['locations']),
-          colorCode: doc.data['color_code'],
-          qrUrl: doc.data['qr_url'],
-        );
+        try {
+          return Product(
+            id: doc.$id,
+            name: doc.data['name'] ?? '',
+            weight: (doc.data['weight'] as num?)?.toDouble() ?? 0.0,
+            entryDate:
+                doc.data['entry_date'] != null
+                    ? DateTime.parse(doc.data['entry_date'])
+                    : DateTime.now(),
+            expiryDate:
+                doc.data['expiry_date'] != null
+                    ? DateTime.parse(doc.data['expiry_date'])
+                    : DateTime.now(),
+            locations: _parseLocations(doc.data['locations']),
+            colorCode: doc.data['color_code'] ?? 0,
+            qrUrl: doc.data['qr_url'] ?? '',
+          );
+        } catch (e) {
+          print('Error parsing product ${doc.$id}: $e');
+          return Product(
+            id: doc.$id,
+            name: 'Error Product',
+            weight: 0.0,
+            entryDate: DateTime.now(),
+            expiryDate: DateTime.now(),
+            locations: [],
+            colorCode: 0,
+            qrUrl: '',
+          );
+        }
       }).toList();
     } on AppwriteException catch (e) {
       print('❌ Error fetching products: ${e.message}');
@@ -343,13 +399,19 @@ class AppwriteService {
       return response.documents.map((doc) {
         return Product(
           id: doc.$id,
-          name: doc.data['name'],
-          weight: (doc.data['weight'] as num).toDouble(),
-          entryDate: DateTime.parse(doc.data['entry_date']),
-          expiryDate: DateTime.parse(doc.data['expiry_date']),
-          locations: List<String>.from(doc.data['locations']),
-          colorCode: doc.data['color_code'],
-          qrUrl: doc.data['qr_url'],
+          name: doc.data['name'] ?? '',
+          weight: (doc.data['weight'] as num?)?.toDouble() ?? 0.0,
+          entryDate:
+              doc.data['entry_date'] != null
+                  ? DateTime.parse(doc.data['entry_date'])
+                  : DateTime.now(),
+          expiryDate:
+              doc.data['expiry_date'] != null
+                  ? DateTime.parse(doc.data['expiry_date'])
+                  : DateTime.now(),
+          locations: _parseLocations(doc.data['locations']),
+          colorCode: doc.data['color_code'] ?? 0,
+          qrUrl: doc.data['qr_url'] ?? '',
         );
       }).toList();
     } on AppwriteException catch (e) {
@@ -372,13 +434,19 @@ class AppwriteService {
       return response.documents.map((doc) {
         return Product(
           id: doc.$id,
-          name: doc.data['name'],
-          weight: (doc.data['weight'] as num).toDouble(),
-          entryDate: DateTime.parse(doc.data['entry_date']),
-          expiryDate: DateTime.parse(doc.data['expiry_date']),
-          locations: List<String>.from(doc.data['locations']),
-          colorCode: doc.data['color_code'],
-          qrUrl: doc.data['qr_url'],
+          name: doc.data['name'] ?? '',
+          weight: (doc.data['weight'] as num?)?.toDouble() ?? 0.0,
+          entryDate:
+              doc.data['entry_date'] != null
+                  ? DateTime.parse(doc.data['entry_date'])
+                  : DateTime.now(),
+          expiryDate:
+              doc.data['expiry_date'] != null
+                  ? DateTime.parse(doc.data['expiry_date'])
+                  : DateTime.now(),
+          locations: _parseLocations(doc.data['locations']),
+          colorCode: doc.data['color_code'] ?? 0,
+          qrUrl: doc.data['qr_url'] ?? '',
         );
       }).toList();
     } on AppwriteException catch (e) {
@@ -507,10 +575,10 @@ class AppwriteService {
       );
 
       return {
-        'columns': response.data['columns'],
-        'racks_per_column': response.data['racks_per_column'],
-        'shelves_per_rack': response.data['shelves_per_rack'],
-        'positions_per_shelf': response.data['positions_per_shelf'],
+        'columns': response.data['columns'] ?? 3,
+        'racks_per_column': response.data['racks_per_column'] ?? 3,
+        'shelves_per_rack': response.data['shelves_per_rack'] ?? 4,
+        'positions_per_shelf': response.data['positions_per_shelf'] ?? 4,
       };
     } on AppwriteException catch (e) {
       if (e.code == 404) {
@@ -534,13 +602,19 @@ class AppwriteService {
       return response.documents.map((doc) {
         return Product(
           id: doc.$id,
-          name: doc.data['name'],
-          weight: (doc.data['weight'] as num).toDouble(),
-          entryDate: DateTime.parse(doc.data['entry_date']),
-          expiryDate: DateTime.parse(doc.data['expiry_date']),
-          locations: List<String>.from(doc.data['locations']),
-          colorCode: doc.data['color_code'],
-          qrUrl: doc.data['qr_url'],
+          name: doc.data['name'] ?? '',
+          weight: (doc.data['weight'] as num?)?.toDouble() ?? 0.0,
+          entryDate:
+              doc.data['entry_date'] != null
+                  ? DateTime.parse(doc.data['entry_date'])
+                  : DateTime.now(),
+          expiryDate:
+              doc.data['expiry_date'] != null
+                  ? DateTime.parse(doc.data['expiry_date'])
+                  : DateTime.now(),
+          locations: _parseLocations(doc.data['locations']),
+          colorCode: doc.data['color_code'] ?? 0,
+          qrUrl: doc.data['qr_url'] ?? '',
         );
       }).toList();
     } on AppwriteException catch (e) {
