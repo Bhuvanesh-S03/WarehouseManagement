@@ -49,14 +49,12 @@ class _MainAppPageState extends State<MainAppPage> {
     _initializeApp();
   }
 
-  Future<void> _initializeApp() async {
+Future<void> _initializeApp() async {
     try {
       setState(() => _isLoading = true);
 
-      // Initialize database
-      await _appwriteService.initializeDatabase();
-      
-      // Load warehouse settings
+      // No need for explicit database initialization - just verify connection
+      // by making a simple settings request
       final settings = await _appwriteService.getWarehouseSettings();
       if (settings != null) {
         setState(() => _warehouseSettings = settings);
@@ -68,10 +66,13 @@ class _MainAppPageState extends State<MainAppPage> {
       setState(() => _isLoading = false);
     } catch (e) {
       setState(() => _isLoading = false);
-      _showErrorDialog('Initialization Error', 'Failed to initialize app: $e');
+      _showErrorDialog(
+        'Connection Error',
+        'Failed to connect to database. Please check your internet connection and try again.\n\nError: ${e.toString()}',
+      );
+      debugPrint('App initialization error: $e');
     }
   }
-
   Future<void> _loadProductsFromDatabase() async {
     try {
       final products = await _appwriteService.getAllProducts();

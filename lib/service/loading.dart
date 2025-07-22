@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:warehouse_manager/model/product_model.dart';
-import 'package:warehouse_manager/screens/qr_code_screen.dart';
+import 'package:warehouse_manager/service/Qr_genration.dart';
 import 'package:warehouse_manager/service/appwrite.dart';
 import 'package:warehouse_manager/widget/show_dialog.dart'
     show showProductDialog;
@@ -47,6 +47,149 @@ class _LoadingPageState extends State<LoadingPage> {
       _isLoading = false;
     });
   }
+  // Add this to your Scaffold's floatingActionButton (replace the existing one)
+
+
+// Add this new method to your _LoadingPageState class
+Future<void> _showAddProductDialog() async {
+  // Get all empty positions
+  final emptyPositions = <String>[];
+  final totalColumns = columns ?? 3;
+  final totalRacks = racksPerColumn ?? 3;
+  final totalShelves = shelvesPerRack ?? 4;
+  final totalPositions = positionsPerShelf ?? 4;
+
+  for (int c = 1; c <= totalColumns; c++) {
+    for (int r = 1; r <= totalRacks; r++) {
+      for (int s = 1; s <= totalShelves; s++) {
+        for (int p = 1; p <= totalPositions; p++) {
+          final positionKey = 'C$c-R$r-S$s-P$p';
+          if (!_productMap.containsKey(positionKey)) {
+            emptyPositions.add(positionKey);
+          }
+        }
+      }
+    }
+  }
+
+  if (emptyPositions.isEmpty) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('No available positions in warehouse')),
+    );
+    return;
+  }
+
+  final result = await showDialog<Product>(
+    context: context,
+    builder: (context) => AlertDialog(
+      title: Text('Add New Product'),
+      content: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            DropdownButtonFormField<String>(
+              decoration: InputDecoration(
+                labelText: 'Select Position',
+                border: OutlineInputBorder(),
+              ),
+              items: emptyPositions
+                  .map((pos) => DropdownMenuItem(
+                        value: pos,
+                        child: Text(pos),
+                      ))
+                  .toList(),
+              onChanged: (value) {},
+            ),
+            SizedBox(height: 16),
+            TextFormField(
+              decoration: InputDecoration(
+                labelText: 'Product Name',
+                border: OutlineInputBorder(),
+              ),
+            ),
+            SizedBox(height: 8),
+            TextFormField(
+              decoration: InputDecoration(
+                labelText: 'Weight (kg)',
+                border: OutlineInputBorder(),
+              ),
+              keyboardType: TextInputType.number,
+            ),
+            SizedBox(height: 8),
+            TextFormField(
+              decoration: InputDecoration(
+                labelText: 'Expiry Date',
+                border: OutlineInputBorder(),
+              ),
+              onTap: () async {
+                final date = await showDatePicker(
+                  context: context,
+                  initialDate: DateTime.now().add(Duration(days: 30)),
+                  firstDate: DateTime.now(),
+                  lastDate: DateTime.now().add(Duration(days: 365 * 2)),
+                );
+                if (date != null) {
+                  // Update the expiry date field
+                }
+              },
+            ),
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: Text('Cancel'),
+        ),
+        ElevatedButton(
+          onPressed: () {
+            // Validate and create product
+            final product = Product(
+              id: '',
+              name: 'New Product',
+              weight: 1.0,
+              entryDate: DateTime.now(),
+              expiryDate: DateTime.now().add(Duration(days: 30)),
+              locations: [], // Will be set below
+              colorCode: 0,
+            );
+            Navigator.pop(context, product);
+          },
+          child: Text('Add'),
+        ),
+      ],
+    ),
+  );
+
+  if (result != null) {
+    try {
+      // Save to database
+      final savedProduct = await widget.appwriteService.saveProduct(result);
+      
+      // Update local state
+      setState(() {
+        _productMap[result.locations.first] = savedProduct;
+      });
+      
+      // Show success message
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Product added successfully')),
+      );
+      
+      // Generate QR code
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (context) => GenerateQRScreen(product: savedProduct, appwriteService: AppwriteService(),),
+        ),
+      );
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Error adding product: $e')),
+      );
+    }
+  }
+}
 
   Future<void> _loadLayoutSettings() async {
     // First try to get from warehouse settings passed from parent
@@ -330,7 +473,7 @@ class _LoadingPageState extends State<LoadingPage> {
                 Navigator.push(
                   context,
                   MaterialPageRoute(
-                    builder: (context) => GenerateQRScreen(product: result),
+                    builder: (context) => GenerateQRScreen(product: result, appwriteService: AppwriteService(),),
                   ),
                 );
               }
@@ -442,7 +585,7 @@ class _LoadingPageState extends State<LoadingPage> {
                       context,
                       MaterialPageRoute(
                         builder:
-                            (context) => GenerateQRScreen(product: product),
+                            (context) => GenerateQRScreen(product: product, appwriteService: AppwriteService(),),
                       ),
                     );
                   },
@@ -749,15 +892,27 @@ class _LoadingPageState extends State<LoadingPage> {
           ),
         ],
       ),
-      floatingActionButton: FloatingActionButton(
-        onPressed: () {
-          setState(() {
-            _isLoading = true;
-          });
-          _loadProductsFromDatabase();
-        },
-        child: Icon(Icons.refresh),
-        tooltip: 'Refresh Data',
+      floatingActionButton: Column(
+        mainAxisAlignment: MainAxisAlignment.end,
+        children: [
+          FloatingActionButton(
+            heroTag: 'refresh_button',
+            onPressed: () {
+              setState(() => _isLoading = true);
+              _loadProductsFromDatabase();
+            },
+            child: Icon(Icons.refresh),
+            tooltip: 'Refresh Data',
+            mini: true,
+          ),
+          SizedBox(height: 10),
+          FloatingActionButton(
+            heroTag: 'add_button',
+            onPressed: () => _showAddProductDialog(),
+            child: Icon(Icons.add),
+            tooltip: 'Add New Product',
+          ),
+        ],
       ),
     );
   }

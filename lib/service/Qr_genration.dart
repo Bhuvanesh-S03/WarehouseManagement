@@ -349,11 +349,11 @@ Color: ${widget.product.colorCode}
       );
 
       setState(() {
-        _savedProductId = productId;
+        _savedProductId = productId as String?;
       });
 
       // Update the product ID for future operations
-      widget.product.id = productId;
+      widget.product.id = productId as String;
 
       _showSuccessDialog('Product saved successfully!');
     } catch (e) {

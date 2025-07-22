@@ -4,206 +4,25 @@ import 'package:appwrite/appwrite.dart';
 import 'package:appwrite/models.dart' as models;
 import '../model/product_model.dart';
 
-/// Enhanced service class to handle all Appwrite operations
+/// Service class to handle all Appwrite operations (SDK 17.0.2 compatible)
 class AppwriteService {
   // Initialize Appwrite client
   final Client client = Client()
-      .setEndpoint('https://cloud.appwrite.io/v1') // Appwrite Cloud endpoint
+      .setEndpoint('https://nyc.cloud.appwrite.io/v1') // Appwrite Cloud endpoint
       .setProject('687bc7e3001a688c12aa'); // Your Appwrite Project ID
 
   late final Databases db;
   late final Storage storage;
 
   // Database and Collection IDs
-  static const String databaseId = 'warehouse_db';
-  static const String productsCollectionId = 'products';
+  static const String databaseId = '687c42240030c078e176';
+  static const String productsCollectionId = '687c423200186f51fe44';
+  static const String qrBucketId = '687c472b0021c89655b8';
   static const String settingsCollectionId = 'settings';
-  static const String qrBucketId = 'qr_codes';
 
   AppwriteService() {
     db = Databases(client);
     storage = Storage(client);
-  }
-
-  /// Initialize the database and collections (call once during setup)
-  Future<void> initializeDatabase() async {
-    try {
-      // Create database if it doesn't exist
-      try {
-        await db.get(databaseId: databaseId);
-      } on AppwriteException catch (e) {
-        if (e.code == 404) {
-          await db.create(databaseId: databaseId, name: 'Warehouse Database');
-        }
-      }
-
-      // Create products collection
-      try {
-        await db.getCollection(
-          databaseId: databaseId,
-          collectionId: productsCollectionId,
-        );
-      } on AppwriteException catch (e) {
-        if (e.code == 404) {
-          await db.createCollection(
-            databaseId: databaseId,
-            collectionId: productsCollectionId,
-            name: 'Products',
-          );
-
-          // Create attributes for the products collection
-          await _createProductAttributes();
-        }
-      }
-
-      // Create settings collection
-      try {
-        await db.getCollection(
-          databaseId: databaseId,
-          collectionId: settingsCollectionId,
-        );
-      } on AppwriteException catch (e) {
-        if (e.code == 404) {
-          await db.createCollection(
-            databaseId: databaseId,
-            collectionId: settingsCollectionId,
-            name: 'Settings',
-          );
-
-          await _createSettingsAttributes();
-        }
-      }
-
-      // Create storage bucket for QR codes
-      try {
-        await storage.getBucket(bucketId: qrBucketId);
-      } on AppwriteException catch (e) {
-        if (e.code == 404) {
-          await storage.createBucket(
-            bucketId: qrBucketId,
-            name: 'QR Codes',
-            permissions: [
-              Permission.read(Role.any()),
-              Permission.create(Role.any()),
-              Permission.update(Role.any()),
-              Permission.delete(Role.any()),
-            ],
-          );
-        }
-      }
-
-      print('✅ Database initialized successfully');
-    } on AppwriteException catch (e) {
-      print('❌ Error initializing database: ${e.message}');
-      rethrow;
-    }
-  }
-
-  /// Create attributes for products collection
-  Future<void> _createProductAttributes() async {
-    final attributes = [
-      {'key': 'name', 'type': 'string', 'size': 255, 'required': true},
-      {'key': 'weight', 'type': 'double', 'required': true},
-      {'key': 'entry_date', 'type': 'datetime', 'required': true},
-      {'key': 'expiry_date', 'type': 'datetime', 'required': true},
-      {
-        'key': 'locations',
-        'type': 'array',
-        'size': 100,
-        'required': true,
-      }, // Fixed array with size
-      {'key': 'color_code', 'type': 'integer', 'required': true},
-      {'key': 'qr_url', 'type': 'string', 'size': 500, 'required': false},
-      {'key': 'qr_file_id', 'type': 'string', 'size': 255, 'required': false},
-    ];
-
-    for (final attr in attributes) {
-      try {
-        await Future.delayed(Duration(milliseconds: 1000)); // Increased delay
-
-        switch (attr['type']) {
-          case 'string':
-            await db.createStringAttribute(
-              databaseId: databaseId,
-              collectionId: productsCollectionId,
-              key: attr['key'] as String,
-              size: attr['size'] as int,
-              required: attr['required'] as bool,
-            );
-            break;
-          case 'double':
-            await db.createFloatAttribute(
-              databaseId: databaseId,
-              collectionId: productsCollectionId,
-              key: attr['key'] as String,
-              required: attr['required'] as bool,
-            );
-            break;
-          case 'datetime':
-            await db.createDatetimeAttribute(
-              databaseId: databaseId,
-              collectionId: productsCollectionId,
-              key: attr['key'] as String,
-              required: attr['required'] as bool,
-            );
-            break;
-          case 'integer':
-            await db.createIntegerAttribute(
-              databaseId: databaseId,
-              collectionId: productsCollectionId,
-              key: attr['key'] as String,
-              required: attr['required'] as bool,
-            );
-            break;
-          case 'array':
-            // For array attributes, create as string array
-            await db.createStringAttribute(
-              databaseId: databaseId,
-              collectionId: productsCollectionId,
-              key: attr['key'] as String,
-              size: attr['size'] as int,
-              required: attr['required'] as bool,
-              xarray: true, // Use xarray instead of isArray
-            );
-            break;
-        }
-
-        print('✅ Created attribute: ${attr['key']}');
-      } on AppwriteException catch (e) {
-        print(
-          'Warning: Could not create attribute ${attr['key']}: ${e.message}',
-        );
-        // Don't rethrow, continue with other attributes
-      }
-    }
-  }
-
-  /// Create attributes for settings collection
-  Future<void> _createSettingsAttributes() async {
-    final attributes = [
-      {'key': 'columns', 'type': 'integer', 'required': true},
-      {'key': 'racks_per_column', 'type': 'integer', 'required': true},
-      {'key': 'shelves_per_rack', 'type': 'integer', 'required': true},
-      {'key': 'positions_per_shelf', 'type': 'integer', 'required': true},
-    ];
-
-    for (final attr in attributes) {
-      try {
-        await db.createIntegerAttribute(
-          databaseId: databaseId,
-          collectionId: settingsCollectionId,
-          key: attr['key'] as String,
-          required: attr['required'] as bool,
-        );
-
-        await Future.delayed(Duration(milliseconds: 1000));
-        print('✅ Created setting attribute: ${attr['key']}');
-      } on AppwriteException catch (e) {
-        print(
-          'Warning: Could not create setting attribute ${attr['key']}: ${e.message}',
-        );
-      }
-    }
   }
 
   /// Save product details to Appwrite database with QR code
@@ -227,7 +46,7 @@ class AppwriteService {
         'weight': product.weight,
         'entry_date': product.entryDate.toIso8601String(),
         'expiry_date': product.expiryDate.toIso8601String(),
-        'locations': product.locations, // This should work now
+        'locations': product.locations,
         'color_code': product.colorCode,
         'qr_url': qrUrl ?? '',
         'qr_file_id': qrFileId ?? '',
@@ -243,14 +62,45 @@ class AppwriteService {
       print('✅ Product saved with ID: ${result.$id}');
       return result.$id;
     } on AppwriteException catch (e) {
-      print('❌ Error saving product: ${e.message}');
+      print('❌ Error saving product: ${e.message} (Code: ${e.code})');
       rethrow;
     }
   }
 
-  /// Save product details to Appwrite database (original method for backward compatibility)
-  Future<String> saveProduct(Product product) async {
-    return saveProductWithQR(product, null);
+  /// Save product details to Appwrite database
+  Future<Product> saveProduct(Product product) async {
+    try {
+      final data = {
+        'name': product.name,
+        'weight': product.weight,
+        'entry_date': product.entryDate.toIso8601String(),
+        'expiry_date': product.expiryDate.toIso8601String(),
+        'locations': product.locations,
+        'color_code': product.colorCode,
+      };
+
+      final result = await db.createDocument(
+        databaseId: databaseId,
+        collectionId: productsCollectionId,
+        documentId: ID.unique(),
+        data: data,
+      );
+
+      // Return the complete product with the new ID
+      return Product(
+        id: result.$id,
+        name: result.data['name'],
+        weight: result.data['weight'].toDouble(),
+        entryDate: DateTime.parse(result.data['entry_date']),
+        expiryDate: DateTime.parse(result.data['expiry_date']),
+        locations: List<String>.from(result.data['locations']),
+        colorCode: result.data['color_code'],
+        qrUrl: result.data['qr_url'] ?? '',
+      );
+    } on AppwriteException catch (e) {
+      print('Error saving product: ${e.message}');
+      rethrow;
+    }
   }
 
   /// Update product with QR URL and file ID
@@ -334,7 +184,6 @@ class AppwriteService {
     }
 
     if (locations is String) {
-      // Handle comma-separated string
       return locations.split(',').map((e) => e.trim()).toList();
     }
 
@@ -495,15 +344,17 @@ class AppwriteService {
       final result = await storage.createFile(
         bucketId: qrBucketId,
         fileId: ID.unique(),
-        file: InputFile.fromPath(path: file.path),
+        file: InputFile.fromPath(path: file.path, filename: fileName),
       );
 
       // Return a viewable URL
-      final fileUrl =
-          'https://cloud.appwrite.io/v1/storage/buckets/$qrBucketId/files/${result.$id}/view?project=687bc7e3001a688c12aa';
+      final fileUrl = storage.getFileView(
+        bucketId: qrBucketId,
+        fileId: result.$id,
+      );
 
       print('✅ QR code uploaded: $fileUrl');
-      return {'url': fileUrl, 'fileId': result.$id};
+      return {'url': fileUrl.toString(), 'fileId': result.$id};
     } on AppwriteException catch (e) {
       print('❌ Error uploading QR code: ${e.message}');
       rethrow;
@@ -526,42 +377,51 @@ class AppwriteService {
   }
 
   /// Save warehouse layout settings
+  /// Save warehouse layout settings
   Future<void> saveWarehouseSettings({
     required int columns,
     required int racksPerColumn,
     required int shelvesPerRack,
     required int positionsPerShelf,
   }) async {
-    try {
-      final data = {
-        'columns': columns,
-        'racks_per_column': racksPerColumn,
-        'shelves_per_rack': shelvesPerRack,
-        'positions_per_shelf': positionsPerShelf,
-      };
+    final data = {
+      'columns': columns,
+      'racks_per_column': racksPerColumn,
+      'shelves_per_rack': shelvesPerRack,
+      'positions_per_shelf': positionsPerShelf,
+    };
 
+    try {
+      // First try to create the document
       await db.createDocument(
         databaseId: databaseId,
         collectionId: settingsCollectionId,
         documentId: 'warehouse_layout',
         data: data,
       );
-
       print('✅ Warehouse settings saved');
     } on AppwriteException catch (e) {
       if (e.code == 409) {
         // Document exists, update it
-        await db.updateDocument(
-          databaseId: databaseId,
-          collectionId: settingsCollectionId,
-          documentId: 'warehouse_layout',
-          data: data,
-        );
-        print('✅ Warehouse settings updated');
+        try {
+          await db.updateDocument(
+            databaseId: databaseId,
+            collectionId: settingsCollectionId,
+            documentId: 'warehouse_layout',
+            data: data,
+          );
+          print('✅ Warehouse settings updated');
+        } on AppwriteException catch (updateError) {
+          print('❌ Error updating warehouse settings: ${updateError.message}');
+          rethrow;
+        }
       } else {
         print('❌ Error saving warehouse settings: ${e.message}');
         rethrow;
       }
+    } catch (e) {
+      print('❌ Unexpected error in saveWarehouseSettings: $e');
+      rethrow;
     }
   }
 

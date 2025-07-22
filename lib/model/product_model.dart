@@ -27,7 +27,8 @@ class Product {
     'entryDate': entryDate.toIso8601String(),
     'expiryDate': expiryDate.toIso8601String(),
     'locations': locations,
-    'colorCode': colorCode,
+    'color_code': colorCode,
+
     'qrUrl': qrUrl,
   };
 
@@ -77,7 +78,7 @@ class Product {
     'entry_date': entryDate.toIso8601String(),
     'expiry_date': expiryDate.toIso8601String(),
     'locations': locations,
-    'color_code': colorCode,
+    'color_code': '#${colorCode.toRadixString(16).padLeft(8, '0')}',
     'qr_url': qrUrl ?? '',
   };
 
