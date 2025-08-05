@@ -6,8 +6,7 @@ class HomePage extends StatefulWidget {
   final Map<String, Product> productMap;
   final Function(String, Product)? onProductUpdated;
 
-  const HomePage({Key? key, required this.productMap, this.onProductUpdated, required AppwriteService appwriteService})
-    : super(key: key);
+  const HomePage({super.key, required this.productMap, this.onProductUpdated, required AppwriteService appwriteService});
 
   @override
   State<HomePage> createState() => _HomePageState();

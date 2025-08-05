@@ -2,9 +2,9 @@ import 'package:flutter/material.dart';
 
 import 'package:warehouse_manager/model/product_model.dart';
 import 'package:warehouse_manager/screens/home_screen.dart';
-import 'package:warehouse_manager/screens/setting.dart';
 import 'package:warehouse_manager/service/loading.dart';
 import 'package:warehouse_manager/service/appwrite.dart';
+import 'package:warehouse_manager/screens/unload_page.dart'; // NEW: Import the unload page
 
 void main() {
   runApp(const MyApp());
@@ -36,12 +36,7 @@ class _MainAppPageState extends State<MainAppPage> {
   final Map<String, Product> _productMap = {};
   final AppwriteService _appwriteService = AppwriteService();
   bool _isLoading = true;
-  Map<String, int> _warehouseSettings = {
-    'columns': 3,
-    'racks_per_column': 3,
-    'shelves_per_rack': 4,
-    'positions_per_shelf': 4,
-  };
+  Map<String, int> _warehouseSettings = {};
 
   @override
   void initState() {
@@ -49,18 +44,25 @@ class _MainAppPageState extends State<MainAppPage> {
     _initializeApp();
   }
 
-Future<void> _initializeApp() async {
+  Future<void> _initializeApp() async {
     try {
       setState(() => _isLoading = true);
 
-      // No need for explicit database initialization - just verify connection
-      // by making a simple settings request
       final settings = await _appwriteService.getWarehouseSettings();
       if (settings != null) {
         setState(() => _warehouseSettings = settings);
+      } else {
+        setState(
+          () =>
+              _warehouseSettings = {
+                'columns': 3,
+                'racks_per_column': 3,
+                'shelves_per_rack': 4,
+                'positions_per_shelf': 4,
+              },
+        );
       }
 
-      // Load products from database
       await _loadProductsFromDatabase();
 
       setState(() => _isLoading = false);
@@ -73,13 +75,14 @@ Future<void> _initializeApp() async {
       debugPrint('App initialization error: $e');
     }
   }
+
   Future<void> _loadProductsFromDatabase() async {
     try {
       final products = await _appwriteService.getAllProducts();
       final Map<String, Product> productMap = {};
 
       for (final product in products) {
-        for (final location in product.locations) {
+        for (final location in product.locations!) {
           productMap[location] = product;
         }
       }
@@ -95,8 +98,11 @@ Future<void> _initializeApp() async {
 
   Future<void> _saveProductToDatabase(Product product) async {
     try {
-      await _appwriteService.saveProduct(product);
-      // Refresh local data
+      if (product.id.isEmpty) {
+        await _appwriteService.saveProduct(product);
+      } else {
+        await _appwriteService.updateProduct(product);
+      }
       await _loadProductsFromDatabase();
     } catch (e) {
       _showErrorDialog('Save Error', 'Failed to save product: $e');
@@ -107,24 +113,23 @@ Future<void> _initializeApp() async {
     setState(() {
       _productMap[key] = product;
     });
-
-    // Save to database
     await _saveProductToDatabase(product);
   }
 
   void _showErrorDialog(String title, String message) {
     showDialog(
       context: context,
-      builder: (context) => AlertDialog(
-        title: Text(title),
-        content: Text(message),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(),
-            child: const Text('OK'),
+      builder:
+          (context) => AlertDialog(
+            title: Text(title),
+            content: Text(message),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(context).pop(),
+                child: const Text('OK'),
+              ),
+            ],
           ),
-        ],
-      ),
     );
   }
 
@@ -136,9 +141,9 @@ Future<void> _initializeApp() async {
         shelvesPerRack: settings['shelves_per_rack']!,
         positionsPerShelf: settings['positions_per_shelf']!,
       );
-      
+
       setState(() => _warehouseSettings = settings);
-      
+
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Settings saved successfully!')),
       );
@@ -189,13 +194,14 @@ Future<void> _initializeApp() async {
           ),
         ],
       ),
-      floatingActionButton: _selectedIndex == 0
-          ? FloatingActionButton(
-              onPressed: _refreshData,
-              child: const Icon(Icons.refresh),
-              tooltip: 'Refresh Data',
-            )
-          : null,
+      floatingActionButton:
+          _selectedIndex == 0
+              ? FloatingActionButton(
+                onPressed: _refreshData,
+                tooltip: 'Refresh Data',
+                child: const Icon(Icons.refresh),
+              )
+              : null,
     );
   }
 
@@ -215,28 +221,14 @@ Future<void> _initializeApp() async {
           appwriteService: _appwriteService,
         );
       case 2:
-        return const Center(
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Icon(Icons.construction, size: 64, color: Colors.grey),
-              SizedBox(height: 16),
-              Text(
-                "Unload Feature",
-                style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
-              ),
-              Text(
-                "Coming Soon!",
-                style: TextStyle(fontSize: 18, color: Colors.grey),
-              ),
-            ],
-          ),
+        return UnloadPage(
+          appwriteService: _appwriteService,
+          onUnload: (String productId) {
+            _loadProductsFromDatabase(); // Refresh all data
+          },
         );
       case 3:
-        // return SettingsPage(
-        //   initialSettings: _warehouseSettings,
-        //   onSettingsUpdated: _updateWarehouseSettings,
-        // );
+        return const Center(child: Text("Settings Page Placeholder"));
       default:
         return HomePage(
           productMap: _productMap,

@@ -1,160 +1,143 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
+import 'package:uuid/uuid.dart';
 import 'package:warehouse_manager/model/product_model.dart';
 
 Future<Product?> showProductDialog(
   BuildContext context,
   String locationKey,
-  Map<String, Product> productMap, // ⬅️ shared product map
+  Map<String, Product> productMap,
 ) async {
-  final List<String> productItems =
-      productMap.values.map((e) => e.name).toList().toSet().toList();
-
-  String? selectedProduct;
+  final nameController = TextEditingController();
   final weightController = TextEditingController();
   DateTime? selectedExpiryDate;
   final expiryDateController = TextEditingController();
 
-  Future<void> _pickDate(BuildContext context) async {
-    final year = await showDialog<int>(
-      context: context,
-      builder: (context) {
-        int selectedYear = DateTime.now().year;
-        return AlertDialog(
-          title: Text("Select Year"),
-          content: SizedBox(
-            height: 200,
-            width: 300,
-            child: ListView.builder(
-              itemCount: 20,
-              itemBuilder: (context, index) {
-                final year = DateTime.now().year + index;
-                return ListTile(
-                  title: Text(year.toString()),
-                  onTap: () => Navigator.of(context).pop(year),
-                );
-              },
-            ),
-          ),
-        );
-      },
-    );
-
-    if (year == null) return;
-
-    final month = await showDialog<int>(
-      context: context,
-      builder: (context) {
-        return SimpleDialog(
-          title: Text("Select Month"),
-          children: List.generate(12, (index) {
-            return SimpleDialogOption(
-              child: Text(DateFormat.MMMM().format(DateTime(year, index + 1))),
-              onPressed: () => Navigator.of(context).pop(index + 1),
-            );
-          }),
-        );
-      },
-    );
-
-    if (month == null) return;
-
-    final day = await showDatePicker(
-      context: context,
-      initialDate: DateTime(year, month),
-      firstDate: DateTime(year, month),
-      lastDate: DateTime(year, month + 1).subtract(Duration(days: 1)),
-    );
-
-    if (day != null) {
-      selectedExpiryDate = day;
-      expiryDateController.text = DateFormat('yyyy-MM-dd').format(day);
-    }
-  }
+  final formKey = GlobalKey<FormState>();
 
   return showDialog<Product>(
     context: context,
     builder: (context) {
-      return AlertDialog(
-        title: Text("Enter Product Details"),
-        content: SingleChildScrollView(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              DropdownButtonFormField<String>(
-                value: selectedProduct,
-                decoration: InputDecoration(labelText: "Product Name"),
-                items:
-                    productItems.map((item) {
-                      return DropdownMenuItem(value: item, child: Text(item));
-                    }).toList(),
-                onChanged: (value) => selectedProduct = value,
+      return StatefulBuilder(
+        builder: (context, setState) {
+          return AlertDialog(
+            title: const Text("Enter Product Details"),
+            content: SingleChildScrollView(
+              child: Form(
+                key: formKey,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    TextFormField(
+                      controller: nameController,
+                      decoration: const InputDecoration(
+                        labelText: "Product Name",
+                        border: OutlineInputBorder(),
+                      ),
+                      validator:
+                          (value) => ProductValidator.validateName(value),
+                    ),
+                    const SizedBox(height: 12),
+                    TextFormField(
+                      controller: weightController,
+                      decoration: const InputDecoration(
+                        labelText: "Weight (kg)",
+                        border: OutlineInputBorder(),
+                      ),
+                      keyboardType: TextInputType.number,
+                      validator:
+                          (value) => ProductValidator.validateWeight(value),
+                    ),
+                    const SizedBox(height: 12),
+                    TextFormField(
+                      controller: expiryDateController,
+                      readOnly: true,
+                      decoration: const InputDecoration(
+                        labelText: "Expiry Date",
+                        border: OutlineInputBorder(),
+                        suffixIcon: Icon(Icons.calendar_today),
+                      ),
+                      validator:
+                          (value) => ProductValidator.validateExpiryDate(
+                            selectedExpiryDate,
+                          ),
+                      onTap: () async {
+                        final date = await showDatePicker(
+                          context: context,
+                          initialDate: DateTime.now().add(
+                            const Duration(days: 30),
+                          ),
+                          firstDate: DateTime.now(),
+                          lastDate: DateTime.now().add(
+                            const Duration(days: 365 * 2),
+                          ),
+                        );
+                        if (date != null) {
+                          setState(() {
+                            selectedExpiryDate = date;
+                            expiryDateController.text = DateFormat(
+                              'yyyy-MM-dd',
+                            ).format(date);
+                          });
+                        }
+                      },
+                    ),
+                    const SizedBox(height: 12),
+                    Row(
+                      children: [
+                        const Text("Location: "),
+                        Text(
+                          locationKey,
+                          style: const TextStyle(fontWeight: FontWeight.bold),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
               ),
-              TextField(
-                controller: weightController,
-                decoration: InputDecoration(labelText: "Weight (kg)"),
-                keyboardType: TextInputType.number,
+            ),
+            actions: [
+              TextButton(
+                child: const Text("Cancel"),
+                onPressed: () => Navigator.of(context).pop(),
               ),
-              TextField(
-                controller: expiryDateController,
-                readOnly: true,
-                decoration: InputDecoration(labelText: "Expiry Date"),
-                onTap: () => _pickDate(context),
-              ),
-              SizedBox(height: 12),
-              Row(
-                children: [
-                  Text("Location: "),
-                  Text(
-                    locationKey,
-                    style: TextStyle(fontWeight: FontWeight.bold),
-                  ),
-                ],
+              ElevatedButton(
+                child: const Text("Save"),
+                onPressed: () {
+                  if (formKey.currentState!.validate()) {
+                    final name =
+                        nameController.text.trim().isEmpty
+                            ? 'Unknown Product'
+                            : nameController.text.trim();
+                    final weight =
+                        double.tryParse(weightController.text.trim()) ?? 0.0;
+                    final locations = [locationKey];
+
+                    final newProduct = Product(
+                      id: const Uuid().v4(),
+                      name: name,
+                      weight: weight,
+                      entryDate: DateTime.now(),
+                      expiryDate: selectedExpiryDate!,
+                      locations: locations,
+                      colorCode:
+                          Product(
+                            id: '',
+                            name: name,
+                            weight: weight,
+                            entryDate: DateTime.now(),
+                            expiryDate: selectedExpiryDate!,
+                            locations: locations,
+                            colorCode: 0,
+                          ).expiryStatus.colorCodeValue,
+                    );
+                    Navigator.of(context).pop(newProduct);
+                  }
+                },
               ),
             ],
-          ),
-        ),
-        actions: [
-          TextButton(
-            child: Text("Cancel"),
-            onPressed: () => Navigator.of(context).pop(),
-          ),
-          ElevatedButton(
-            child: Text("Save"),
-            onPressed: () {
-              if (selectedProduct != null &&
-                  weightController.text.isNotEmpty &&
-                  selectedExpiryDate != null) {
-                final double weight =
-                    double.tryParse(weightController.text.trim()) ?? 0.0;
-                final now = DateTime.now();
-                final daysToExpiry = selectedExpiryDate!.difference(now).inDays;
-
-                int colorCode;
-                if (daysToExpiry < 30) {
-                  colorCode = Colors.yellow.value;
-                } else {
-                  colorCode = Colors.red.value;
-                }
-
-              final product = Product(
-                  id: "${DateTime.now().millisecondsSinceEpoch}-$locationKey",
-                  name: selectedProduct!,
-                  weight: weight,
-                  entryDate: now,
-                  expiryDate: selectedExpiryDate!,
-                  locations: [locationKey],
-                  colorCode: colorCode,
-                );
-
-
-                Navigator.of(context).pop(product);
-              }
-              
-            },
-            
-          ),
-        ],
+          );
+        },
       );
     },
   );

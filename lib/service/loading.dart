@@ -3,8 +3,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:warehouse_manager/model/product_model.dart';
 import 'package:warehouse_manager/service/Qr_genration.dart';
 import 'package:warehouse_manager/service/appwrite.dart';
-import 'package:warehouse_manager/widget/show_dialog.dart'
-    show showProductDialog;
+import 'package:warehouse_manager/widget/show_dialog.dart';
 
 class LoadingPage extends StatefulWidget {
   final Map<String, Product> productMap;
@@ -13,12 +12,12 @@ class LoadingPage extends StatefulWidget {
   final AppwriteService appwriteService;
 
   const LoadingPage({
-    Key? key,
+    super.key,
     required this.productMap,
     required this.onProductUpdated,
     required this.warehouseSettings,
     required this.appwriteService,
-  }) : super(key: key);
+  });
 
   @override
   State<LoadingPage> createState() => _LoadingPageState();
@@ -47,164 +46,18 @@ class _LoadingPageState extends State<LoadingPage> {
       _isLoading = false;
     });
   }
-  // Add this to your Scaffold's floatingActionButton (replace the existing one)
-
-
-// Add this new method to your _LoadingPageState class
-Future<void> _showAddProductDialog() async {
-  // Get all empty positions
-  final emptyPositions = <String>[];
-  final totalColumns = columns ?? 3;
-  final totalRacks = racksPerColumn ?? 3;
-  final totalShelves = shelvesPerRack ?? 4;
-  final totalPositions = positionsPerShelf ?? 4;
-
-  for (int c = 1; c <= totalColumns; c++) {
-    for (int r = 1; r <= totalRacks; r++) {
-      for (int s = 1; s <= totalShelves; s++) {
-        for (int p = 1; p <= totalPositions; p++) {
-          final positionKey = 'C$c-R$r-S$s-P$p';
-          if (!_productMap.containsKey(positionKey)) {
-            emptyPositions.add(positionKey);
-          }
-        }
-      }
-    }
-  }
-
-  if (emptyPositions.isEmpty) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('No available positions in warehouse')),
-    );
-    return;
-  }
-
-  final result = await showDialog<Product>(
-    context: context,
-    builder: (context) => AlertDialog(
-      title: Text('Add New Product'),
-      content: SingleChildScrollView(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            DropdownButtonFormField<String>(
-              decoration: InputDecoration(
-                labelText: 'Select Position',
-                border: OutlineInputBorder(),
-              ),
-              items: emptyPositions
-                  .map((pos) => DropdownMenuItem(
-                        value: pos,
-                        child: Text(pos),
-                      ))
-                  .toList(),
-              onChanged: (value) {},
-            ),
-            SizedBox(height: 16),
-            TextFormField(
-              decoration: InputDecoration(
-                labelText: 'Product Name',
-                border: OutlineInputBorder(),
-              ),
-            ),
-            SizedBox(height: 8),
-            TextFormField(
-              decoration: InputDecoration(
-                labelText: 'Weight (kg)',
-                border: OutlineInputBorder(),
-              ),
-              keyboardType: TextInputType.number,
-            ),
-            SizedBox(height: 8),
-            TextFormField(
-              decoration: InputDecoration(
-                labelText: 'Expiry Date',
-                border: OutlineInputBorder(),
-              ),
-              onTap: () async {
-                final date = await showDatePicker(
-                  context: context,
-                  initialDate: DateTime.now().add(Duration(days: 30)),
-                  firstDate: DateTime.now(),
-                  lastDate: DateTime.now().add(Duration(days: 365 * 2)),
-                );
-                if (date != null) {
-                  // Update the expiry date field
-                }
-              },
-            ),
-          ],
-        ),
-      ),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.pop(context),
-          child: Text('Cancel'),
-        ),
-        ElevatedButton(
-          onPressed: () {
-            // Validate and create product
-            final product = Product(
-              id: '',
-              name: 'New Product',
-              weight: 1.0,
-              entryDate: DateTime.now(),
-              expiryDate: DateTime.now().add(Duration(days: 30)),
-              locations: [], // Will be set below
-              colorCode: 0,
-            );
-            Navigator.pop(context, product);
-          },
-          child: Text('Add'),
-        ),
-      ],
-    ),
-  );
-
-  if (result != null) {
-    try {
-      // Save to database
-      final savedProduct = await widget.appwriteService.saveProduct(result);
-      
-      // Update local state
-      setState(() {
-        _productMap[result.locations.first] = savedProduct;
-      });
-      
-      // Show success message
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Product added successfully')),
-      );
-      
-      // Generate QR code
-      Navigator.push(
-        context,
-        MaterialPageRoute(
-          builder: (context) => GenerateQRScreen(product: savedProduct, appwriteService: AppwriteService(),),
-        ),
-      );
-    } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error adding product: $e')),
-      );
-    }
-  }
-}
 
   Future<void> _loadLayoutSettings() async {
-    // First try to get from warehouse settings passed from parent
     if (widget.warehouseSettings.isNotEmpty) {
       setState(() {
-        columns = widget.warehouseSettings['columns'] ?? 3;
-        racksPerColumn = widget.warehouseSettings['racks_per_column'] ?? 3;
-        shelvesPerRack = widget.warehouseSettings['shelves_per_rack'] ?? 4;
-        positionsPerShelf =
-            widget.warehouseSettings['positions_per_shelf'] ?? 4;
+        columns = widget.warehouseSettings['columns'];
+        racksPerColumn = widget.warehouseSettings['racks_per_column'];
+        shelvesPerRack = widget.warehouseSettings['shelves_per_rack'];
+        positionsPerShelf = widget.warehouseSettings['positions_per_shelf'];
       });
       return;
     }
 
-    // Fallback to SharedPreferences
     final prefs = await SharedPreferences.getInstance();
     final savedColumns = prefs.getInt('columns');
     final savedRacks = prefs.getInt('racks');
@@ -222,7 +75,6 @@ Future<void> _showAddProductDialog() async {
         positionsPerShelf = savedPositions;
       });
     } else {
-      // Set default values if nothing is found
       setState(() {
         columns = 3;
         racksPerColumn = 3;
@@ -238,56 +90,43 @@ Future<void> _showAddProductDialog() async {
       setState(() {
         _errorMessage = '';
       });
-
-      // Get products from Appwrite database
       final products = await widget.appwriteService.getAllProducts();
-
-      // Convert to location-based map
       Map<String, Product> locationProductMap = {};
-
       for (final product in products) {
-        // Only include products that are not unloaded (if the field exists)
-        // Note: Adjust this based on your actual database structure
-        for (final location in product.locations) {
+        for (final location in product.locations!) {
           locationProductMap[location] = product;
         }
       }
-
       setState(() {
         _productMap = locationProductMap;
       });
-
-      // Update parent widget's product map
       for (final entry in locationProductMap.entries) {
         widget.onProductUpdated(entry.key, entry.value);
       }
-
       print('✅ Loaded ${products.length} products from database');
     } catch (e) {
       setState(() {
         _errorMessage = 'Error loading products: $e';
       });
       print('❌ Error loading products: $e');
-
-      // Show error dialog
       if (mounted) {
         showDialog(
           context: context,
           builder:
               (context) => AlertDialog(
-                title: Text('Error Loading Products'),
+                title: const Text('Error Loading Products'),
                 content: Text('Failed to load products from database: $e'),
                 actions: [
                   TextButton(
                     onPressed: () => Navigator.pop(context),
-                    child: Text('OK'),
+                    child: const Text('OK'),
                   ),
                   TextButton(
                     onPressed: () {
                       Navigator.pop(context);
-                      _loadProductsFromDatabase(); // Retry
+                      _loadProductsFromDatabase();
                     },
-                    child: Text('Retry'),
+                    child: const Text('Retry'),
                   ),
                 ],
               ),
@@ -299,7 +138,7 @@ Future<void> _showAddProductDialog() async {
   Future<void> _askForLayout() async {
     final result = await showDialog<Map<String, int>>(
       context: context,
-      barrierDismissible: false, // Prevent dismissing without input
+      barrierDismissible: false,
       builder: (context) {
         final colController = TextEditingController(text: columns.toString());
         final rackController = TextEditingController(
@@ -313,50 +152,50 @@ Future<void> _showAddProductDialog() async {
         );
 
         return AlertDialog(
-          title: Text('Configure Warehouse Layout'),
+          title: const Text('Configure Warehouse Layout'),
           content: SingleChildScrollView(
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                Text(
+                const Text(
                   'Enter the dimensions for your warehouse layout:',
                   style: TextStyle(fontSize: 14),
                 ),
-                SizedBox(height: 16),
+                const SizedBox(height: 16),
                 TextField(
                   controller: colController,
                   keyboardType: TextInputType.number,
-                  decoration: InputDecoration(
+                  decoration: const InputDecoration(
                     labelText: 'Columns',
                     border: OutlineInputBorder(),
                     hintText: 'Number of columns',
                   ),
                 ),
-                SizedBox(height: 8),
+                const SizedBox(height: 8),
                 TextField(
                   controller: rackController,
                   keyboardType: TextInputType.number,
-                  decoration: InputDecoration(
+                  decoration: const InputDecoration(
                     labelText: 'Racks per Column',
                     border: OutlineInputBorder(),
                     hintText: 'Number of racks in each column',
                   ),
                 ),
-                SizedBox(height: 8),
+                const SizedBox(height: 8),
                 TextField(
                   controller: shelfController,
                   keyboardType: TextInputType.number,
-                  decoration: InputDecoration(
+                  decoration: const InputDecoration(
                     labelText: 'Shelves per Rack',
                     border: OutlineInputBorder(),
                     hintText: 'Number of shelves in each rack',
                   ),
                 ),
-                SizedBox(height: 8),
+                const SizedBox(height: 8),
                 TextField(
                   controller: posController,
                   keyboardType: TextInputType.number,
-                  decoration: InputDecoration(
+                  decoration: const InputDecoration(
                     labelText: 'Positions per Shelf',
                     border: OutlineInputBorder(),
                     hintText: 'Number of positions on each shelf',
@@ -374,7 +213,7 @@ Future<void> _showAddProductDialog() async {
                     'shelves': shelvesPerRack!,
                     'positions': positionsPerShelf!,
                   }),
-              child: Text('Use Defaults'),
+              child: const Text('Use Defaults'),
             ),
             ElevatedButton(
               onPressed: () {
@@ -393,7 +232,7 @@ Future<void> _showAddProductDialog() async {
                   'positions': positions,
                 });
               },
-              child: Text('Apply'),
+              child: const Text('Apply'),
             ),
           ],
         );
@@ -406,8 +245,6 @@ Future<void> _showAddProductDialog() async {
       await prefs.setInt('racks', result['racks']!);
       await prefs.setInt('shelves', result['shelves']!);
       await prefs.setInt('positions', result['positions']!);
-
-      // Also save to Appwrite database
       try {
         await widget.appwriteService.saveWarehouseSettings(
           columns: result['columns']!,
@@ -429,19 +266,22 @@ Future<void> _showAddProductDialog() async {
   }
 
   Color _getProductStatusColor(Product? product) {
-    if (product == null) return Colors.green.shade100;
-
-    final status = product.expiryStatus;
-    switch (status) {
-      case ExpiryStatus.good:
-        return Colors.green.shade200;
-      case ExpiryStatus.warning:
-        return Colors.yellow.shade200;
-      case ExpiryStatus.critical:
-        return Colors.orange.shade200;
-      case ExpiryStatus.expired:
-        return Colors.red.shade200;
+    if (product == null) {
+      return Colors.grey.shade200; // Empty slots are grey
     }
+
+    if (product.expiryDate != null) {
+      final daysUntilExpiry =
+          product.expiryDate!.difference(DateTime.now()).inDays;
+      if (daysUntilExpiry < 0) {
+        return Colors.red.shade200; // Expired items are red
+      }
+      if (daysUntilExpiry <= 90) {
+        return Colors.yellow.shade200; // Soon expiring are yellow
+      }
+    }
+
+    return Colors.green.shade200; // All other loaded items are green
   }
 
   Widget _buildPositionTile(String shelfKey, Product? shelfProduct) {
@@ -450,30 +290,29 @@ Future<void> _showAddProductDialog() async {
     return GestureDetector(
       onTap: () async {
         if (shelfProduct == null) {
-          // Add new product
-          final result = await showProductDialog(
+          final newProduct = await showProductDialog(
             context,
             shelfKey,
             _productMap,
           );
-          if (result != null) {
-            // Save to database
+          if (newProduct != null) {
             try {
-              await widget.appwriteService.saveProduct(result);
-
-              // Update local state
+              final savedProduct = await widget.appwriteService.saveProduct(
+                newProduct,
+              );
               setState(() {
-                _productMap[shelfKey] = result;
+                _productMap[shelfKey] = savedProduct;
               });
-
-              widget.onProductUpdated(shelfKey, result);
-
-              // Navigate to QR generator screen
+              widget.onProductUpdated(shelfKey, savedProduct);
               if (mounted) {
                 Navigator.push(
                   context,
                   MaterialPageRoute(
-                    builder: (context) => GenerateQRScreen(product: result, appwriteService: AppwriteService(),),
+                    builder:
+                        (context) => GenerateQRScreen(
+                          product: savedProduct,
+                          appwriteService: widget.appwriteService,
+                        ),
                   ),
                 );
               }
@@ -486,7 +325,6 @@ Future<void> _showAddProductDialog() async {
             }
           }
         } else {
-          // Show existing product details
           _showProductDetails(shelfProduct, shelfKey);
         }
       },
@@ -498,7 +336,7 @@ Future<void> _showAddProductDialog() async {
           boxShadow:
               shelfProduct != null
                   ? [
-                    BoxShadow(
+                    const BoxShadow(
                       color: Colors.black12,
                       blurRadius: 2,
                       offset: Offset(1, 1),
@@ -506,7 +344,7 @@ Future<void> _showAddProductDialog() async {
                   ]
                   : null,
         ),
-        padding: EdgeInsets.all(4),
+        padding: const EdgeInsets.all(4),
         child: Center(
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
@@ -514,7 +352,7 @@ Future<void> _showAddProductDialog() async {
               Text(
                 shelfProduct?.name ?? 'Empty',
                 style: TextStyle(
-                  fontSize: 9,
+                  fontSize: 12,
                   fontWeight:
                       shelfProduct != null
                           ? FontWeight.bold
@@ -525,14 +363,15 @@ Future<void> _showAddProductDialog() async {
                 overflow: TextOverflow.ellipsis,
               ),
               if (shelfProduct != null) ...[
-                SizedBox(height: 2),
+                const SizedBox(height: 2),
                 Text(
-                  shelfProduct.expiryDate.toLocal().toString().split(' ')[0],
-                  style: TextStyle(fontSize: 8, color: Colors.black87),
+                  shelfProduct.expiryDate?.toLocal().toString().split(' ')[0] ??
+                      'N/A',
+                  style: const TextStyle(fontSize: 10, color: Colors.black87),
                 ),
                 Text(
-                  '${shelfProduct.weight.toStringAsFixed(1)} kg',
-                  style: TextStyle(fontSize: 7, color: Colors.black54),
+                  '${shelfProduct.weight?.toStringAsFixed(1) ?? 'N/A'} kg',
+                  style: const TextStyle(fontSize: 9, color: Colors.black54),
                 ),
               ],
             ],
@@ -549,7 +388,7 @@ Future<void> _showAddProductDialog() async {
           (context) => AlertDialog(
             title: Text(
               product.name,
-              style: TextStyle(fontWeight: FontWeight.bold),
+              style: const TextStyle(fontWeight: FontWeight.bold),
             ),
             content: SingleChildScrollView(
               child: Column(
@@ -558,15 +397,17 @@ Future<void> _showAddProductDialog() async {
                 children: [
                   _buildDetailRow(
                     'Weight',
-                    '${product.weight.toStringAsFixed(2)} kg',
+                    '${product.weight?.toStringAsFixed(2) ?? 'N/A'} kg',
                   ),
                   _buildDetailRow(
                     'Entry Date',
-                    product.entryDate.toLocal().toString().split(' ')[0],
+                    product.entryDate?.toLocal().toString().split(' ')[0] ??
+                        'N/A',
                   ),
                   _buildDetailRow(
                     'Expiry Date',
-                    product.expiryDate.toLocal().toString().split(' ')[0],
+                    product.expiryDate?.toLocal().toString().split(' ')[0] ??
+                        'N/A',
                   ),
                   _buildDetailRow('Location', location),
                   _buildDetailRow('Status', product.expiryStatus.displayName),
@@ -585,11 +426,14 @@ Future<void> _showAddProductDialog() async {
                       context,
                       MaterialPageRoute(
                         builder:
-                            (context) => GenerateQRScreen(product: product, appwriteService: AppwriteService(),),
+                            (context) => GenerateQRScreen(
+                              product: product,
+                              appwriteService: widget.appwriteService,
+                            ),
                       ),
                     );
                   },
-                  child: Text('View QR'),
+                  child: const Text('View QR'),
                 ),
               TextButton(
                 onPressed: () async {
@@ -598,21 +442,21 @@ Future<void> _showAddProductDialog() async {
                     context: context,
                     builder:
                         (context) => AlertDialog(
-                          title: Text('Delete Product'),
+                          title: const Text('Delete Product'),
                           content: Text(
                             'Are you sure you want to delete "${product.name}"?',
                           ),
                           actions: [
                             TextButton(
                               onPressed: () => Navigator.pop(context, false),
-                              child: Text('Cancel'),
+                              child: const Text('Cancel'),
                             ),
                             ElevatedButton(
                               onPressed: () => Navigator.pop(context, true),
                               style: ElevatedButton.styleFrom(
                                 backgroundColor: Colors.red,
                               ),
-                              child: Text('Delete'),
+                              child: const Text('Delete'),
                             ),
                           ],
                         ),
@@ -628,7 +472,7 @@ Future<void> _showAddProductDialog() async {
                       });
                       if (mounted) {
                         ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(
+                          const SnackBar(
                             content: Text('Product deleted successfully'),
                           ),
                         );
@@ -642,11 +486,14 @@ Future<void> _showAddProductDialog() async {
                     }
                   }
                 },
-                child: Text('Delete', style: TextStyle(color: Colors.red)),
+                child: const Text(
+                  'Delete',
+                  style: TextStyle(color: Colors.red),
+                ),
               ),
               TextButton(
                 onPressed: () => Navigator.pop(context),
-                child: Text('Close'),
+                child: const Text('Close'),
               ),
             ],
           ),
@@ -663,10 +510,10 @@ Future<void> _showAddProductDialog() async {
             width: 80,
             child: Text(
               '$label:',
-              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12),
+              style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12),
             ),
           ),
-          Expanded(child: Text(value, style: TextStyle(fontSize: 12))),
+          Expanded(child: Text(value, style: const TextStyle(fontSize: 12))),
         ],
       ),
     );
@@ -677,7 +524,7 @@ Future<void> _showAddProductDialog() async {
     if (_isLoading) {
       return Scaffold(
         appBar: AppBar(
-          title: Text('Loading Warehouse'),
+          title: const Text('Loading Warehouse'),
           backgroundColor: Colors.blue.shade700,
           foregroundColor: Colors.white,
         ),
@@ -685,15 +532,15 @@ Future<void> _showAddProductDialog() async {
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              CircularProgressIndicator(),
-              SizedBox(height: 16),
-              Text('Loading warehouse data...'),
+              const CircularProgressIndicator(),
+              const SizedBox(height: 16),
+              const Text('Loading warehouse data...'),
               if (_errorMessage.isNotEmpty)
                 Padding(
                   padding: const EdgeInsets.all(16.0),
                   child: Text(
                     _errorMessage,
-                    style: TextStyle(color: Colors.red),
+                    style: const TextStyle(color: Colors.red),
                     textAlign: TextAlign.center,
                   ),
                 ),
@@ -708,18 +555,18 @@ Future<void> _showAddProductDialog() async {
         shelvesPerRack == null ||
         positionsPerShelf == null) {
       return Scaffold(
-        appBar: AppBar(title: Text('Configuration Error')),
+        appBar: AppBar(title: const Text('Configuration Error')),
         body: Center(
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              Icon(Icons.error, size: 64, color: Colors.red),
-              SizedBox(height: 16),
-              Text('Invalid warehouse configuration'),
-              SizedBox(height: 16),
+              const Icon(Icons.error, size: 64, color: Colors.red),
+              const SizedBox(height: 16),
+              const Text('Invalid warehouse configuration'),
+              const SizedBox(height: 16),
               ElevatedButton(
                 onPressed: _askForLayout,
-                child: Text('Configure Layout'),
+                child: const Text('Configure Layout'),
               ),
             ],
           ),
@@ -733,12 +580,12 @@ Future<void> _showAddProductDialog() async {
 
     return Scaffold(
       appBar: AppBar(
-        title: Text('Warehouse Layout'),
+        title: const Text('Warehouse Layout'),
         backgroundColor: Colors.blue.shade700,
         foregroundColor: Colors.white,
         actions: [
           IconButton(
-            icon: Icon(Icons.refresh),
+            icon: const Icon(Icons.refresh),
             onPressed: () {
               setState(() {
                 _isLoading = true;
@@ -748,7 +595,7 @@ Future<void> _showAddProductDialog() async {
             tooltip: 'Refresh Data',
           ),
           IconButton(
-            icon: Icon(Icons.settings),
+            icon: const Icon(Icons.settings),
             onPressed: _askForLayout,
             tooltip: 'Configure Layout',
           ),
@@ -756,9 +603,8 @@ Future<void> _showAddProductDialog() async {
       ),
       body: Column(
         children: [
-          // Status Bar
           Container(
-            padding: EdgeInsets.all(12),
+            padding: const EdgeInsets.all(12),
             color: Colors.grey.shade100,
             child: Row(
               mainAxisAlignment: MainAxisAlignment.spaceAround,
@@ -772,9 +618,8 @@ Future<void> _showAddProductDialog() async {
               ],
             ),
           ),
-          // Legend
           Container(
-            padding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
             child: Row(
               mainAxisAlignment: MainAxisAlignment.spaceAround,
               children: [
@@ -782,12 +627,11 @@ Future<void> _showAddProductDialog() async {
                 _buildLegendItem(Colors.yellow.shade200, 'Warning'),
                 _buildLegendItem(Colors.orange.shade200, 'Critical'),
                 _buildLegendItem(Colors.red.shade200, 'Expired'),
-                _buildLegendItem(Colors.green.shade100, 'Empty'),
+                _buildLegendItem(Colors.grey.shade200, 'Empty'),
               ],
             ),
           ),
-          Divider(height: 1),
-          // Warehouse Layout
+          const Divider(height: 1),
           Expanded(
             child: Padding(
               padding: const EdgeInsets.all(8.0),
@@ -795,8 +639,8 @@ Future<void> _showAddProductDialog() async {
                 itemCount: columns,
                 itemBuilder: (context, colIndex) {
                   return Container(
-                    margin: EdgeInsets.symmetric(vertical: 8),
-                    padding: EdgeInsets.all(8),
+                    margin: const EdgeInsets.symmetric(vertical: 8),
+                    padding: const EdgeInsets.all(8),
                     decoration: BoxDecoration(
                       color: Colors.grey.shade200,
                       border: Border.all(color: Colors.black26),
@@ -807,16 +651,16 @@ Future<void> _showAddProductDialog() async {
                       children: [
                         Text(
                           "Column ${colIndex + 1}",
-                          style: TextStyle(
+                          style: const TextStyle(
                             fontSize: 18,
                             fontWeight: FontWeight.bold,
                           ),
                         ),
-                        SizedBox(height: 8),
+                        const SizedBox(height: 8),
                         ...List.generate(racksPerColumn!, (rackIndex) {
                           return Container(
-                            margin: EdgeInsets.symmetric(vertical: 6),
-                            padding: EdgeInsets.all(8),
+                            margin: const EdgeInsets.symmetric(vertical: 6),
+                            padding: const EdgeInsets.all(8),
                             decoration: BoxDecoration(
                               color: Colors.white,
                               border: Border.all(color: Colors.black12),
@@ -827,7 +671,9 @@ Future<void> _showAddProductDialog() async {
                               children: [
                                 Text(
                                   "Rack ${rackIndex + 1}",
-                                  style: TextStyle(fontWeight: FontWeight.bold),
+                                  style: const TextStyle(
+                                    fontWeight: FontWeight.bold,
+                                  ),
                                 ),
                                 ...List.generate(shelvesPerRack!, (shelfIndex) {
                                   return Padding(
@@ -846,10 +692,10 @@ Future<void> _showAddProductDialog() async {
                                             color: Colors.grey.shade600,
                                           ),
                                         ),
-                                        SizedBox(height: 4),
+                                        const SizedBox(height: 4),
                                         GridView.builder(
                                           physics:
-                                              NeverScrollableScrollPhysics(),
+                                              const NeverScrollableScrollPhysics(),
                                           shrinkWrap: true,
                                           gridDelegate:
                                               SliverGridDelegateWithFixedCrossAxisCount(
@@ -901,17 +747,11 @@ Future<void> _showAddProductDialog() async {
               setState(() => _isLoading = true);
               _loadProductsFromDatabase();
             },
-            child: Icon(Icons.refresh),
             tooltip: 'Refresh Data',
             mini: true,
+            child: const Icon(Icons.refresh),
           ),
-          SizedBox(height: 10),
-          FloatingActionButton(
-            heroTag: 'add_button',
-            onPressed: () => _showAddProductDialog(),
-            child: Icon(Icons.add),
-            tooltip: 'Add New Product',
-          ),
+          const SizedBox(height: 10),
         ],
       ),
     );
@@ -930,8 +770,8 @@ Future<void> _showAddProductDialog() async {
             borderRadius: BorderRadius.circular(2),
           ),
         ),
-        SizedBox(width: 4),
-        Text(label, style: TextStyle(fontSize: 10)),
+        const SizedBox(width: 4),
+        Text(label, style: const TextStyle(fontSize: 10)),
       ],
     );
   }
